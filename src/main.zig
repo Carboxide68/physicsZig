@@ -87,8 +87,9 @@ fn glfw_mouse_callback(window: glfw.Window, x: f64, y: f64) void {
         const x_p: f32 = -2 * x_diff/fwidth;
         const y_p: f32 = 2 * y_diff/fheight;
 
-        const cam_x = Vec2.gen(myCamera.view_matrix.data[0], myCamera.view_matrix.data[1]);
-        const cam_y = Vec2.gen(myCamera.view_matrix.data[3], myCamera.view_matrix.data[4]);
+        const matrix = myCamera.getAssembled();
+        const cam_x = Vec2.gen(matrix.data[0], matrix.data[1]);
+        const cam_y = Vec2.gen(matrix.data[3], matrix.data[4]);
         const move_x = cam_x.sMult(x_p/cam_x.length());
         const move_y = cam_y.sMult(y_p/cam_y.length());
         myCamera.move(move_x.x + move_y.x, move_x.y + move_y.y);
@@ -191,7 +192,7 @@ pub fn main() anyerror!void {
     const seed = 9;
     var prng = std.rand.DefaultPrng.init(seed);
     const rand = prng.random();
-    const node_count: usize = 20000;
+    const node_count: usize = 100;
     const width: f32 = 5;
     const height: f32 = 5;
     var nodes: [node_count][2]f32 = undefined;
@@ -200,7 +201,7 @@ pub fn main() anyerror!void {
         node[1] = (rand.float(f32) * 2 - 1) * height;
     }
 
-    const radius: f32 = 0.02;
+    const radius: f32 = 0.01;
 
     var node_buffer = Buffer.init(@sizeOf([2]f32) * node_count, .stream_draw);
     try node_buffer.bindRange(.shader_storage_buffer, 0, 0, @intCast(i64, node_buffer.size));
@@ -208,11 +209,12 @@ pub fn main() anyerror!void {
 
     try vertex_buffer.subData(0, @sizeOf(f32) * 2 * circle_vertex_data.len, common.toData(&circle_vertex_data));
 
-    var qt = QuadTree.init(common.a, 20, [2]f32{0, 0}, width*2, height*2);
+    var qt = QuadTree.init(common.a, 20, .{.x=0, .y=0}, .{.x=2*width,.y=2*height});
     qt.config.point_radius = radius;
     qt.build(nodes[0..]);
     qt.build(nodes[0..]);
     qt.build(nodes[0..]);
+    QuadTree.print(qt._quadtree_data);
 
     my_VAO.bindVertexBuffer(vertex_buffer, 0, 0, 8);
     my_VAO.setLayout(0, 2, 0, buffer.GLType.float);

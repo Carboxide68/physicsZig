@@ -12,13 +12,14 @@ const Allocator = std.mem.Allocator;
 //Each point also contians a reference to up to 4 cells.
 //These pointers have 2 bits for each possible path, so the max depth is 32 if the reference is a u64.
 //First store the byte-offsets to the reference levels.
-//Each level contains metadata seen in the struct QuadTreeLevel
+//Each level contains metadata seen in the struct QTL
 
 pub const Config = struct {
-    position: [2]f32,
-    width: f32,
-    height: f32,
+    pos: Vec2,
+    size: Vec2,
+
     max_depth: u32 = 10,
+
     point_radius: f32 = 0.1,
     node_count_in_one: u32 = 4,
 };
@@ -31,18 +32,18 @@ pub const Info = struct {
 config: Config,
 info: Info = .{},
 
+points: [][4]usize = ([_][4]usize{})[0..0],
 _a: Allocator,
-points: [][4]Cell = ([_][4]Cell{})[0..0],
+_cells: []Cell = ([_]Cell{})[0..0],
 _quadtree_data: []Word = ([_]Word{})[0..0],
 _indices: []usize = ([_]usize{})[0..0],
 
-pub fn init(a: Allocator, max_depth: u32, position: [2]f32, width: f32, height: f32) QuadTree {
+pub fn init(a: Allocator, max_depth: u32, position: Vec2, size: Vec2) QuadTree {
     return .{
         .config = .{
-            .position = position,
+            .pos = position,
             .max_depth = @minimum(max_depth, Cell.MAX_DEPTH),
-            .width = width,
-            .height = height,
+            .size = size,
         },
         ._a = a,
     };
@@ -51,110 +52,116 @@ pub fn init(a: Allocator, max_depth: u32, position: [2]f32, width: f32, height: 
 pub fn destroy(self: *QuadTree) void {
     if (self._quadtree_data.len > 0) self._a.free(self._quadtree_data);
     if (self._indices.len > 0) self._a.free(self._indices);
+    if (self._cells.len > 0) self._a.free(self._cells);
     if (self.points.len > 0) self._a.free(self.points);
 }
 
-pub fn getPointsInCell(self: QuadTree, cell: Cell) []u56 {
-    if (cell.hash == null) return {};
-    var index: usize = 0;
-
-    var i: usize = 0;
-    while (i < self.config.max_depth) : (i += 1) {
-        const lvl_id = cell.level(i);
-        const qtl = self._quadtree_data[index].qtl;
-        index = qtl.getLevel(index, self._quadtree_data, lvl_id) orelse break;
-    }
-
-    const qtl = self._quadtree_data[index].qtl;
-    const count = qtl.getPointCount();
-    var points = self._a.alloc(u56, count);
-
-    for (points) |*point| {
-        index += 1;
-        const next_space = self._quadtree_data[index];
-        if (next_space.node != .Point) return points;
-        
-        const next_point = next_space.point;
-        point.* = next_point.reference;
-    }
-    return points;
-}
-
-fn lessThanIndexSort(context: [][4]Cell, lhs: usize, rhs: usize) bool {
-    const minor_lhs = lhs%4;
-    const major_lhs = lhs >> 2;
-    const minor_rhs = rhs%4;
-    const major_rhs = rhs >> 2;
-    const l = context[major_lhs][minor_lhs];
-    const r = context[major_rhs][minor_rhs];
+fn lessThanIndexSort(context: []Cell, lhs: usize, rhs: usize) bool {
+    const l = context[lhs];
+    const r = context[rhs];
 
     if (l.depth == r.depth) {
         return l.hash < r.hash;
     } else return l.depth > r.depth;
-
 }
 
-pub fn build(self: *QuadTree, points_in: [][2]f32) void {
+pub fn build(self: *QuadTree, points_in: []const [2]f32) void {
     const t = common.Timer(@src());
     defer _ = t.endPrint();
 
     self.info = .{};
-    self.points = self._a.realloc(self.points, points_in.len) catch self.points;
+    self._cells = self._a.realloc(self._cells, points_in.len*4) catch self._cells;
+    if (self._cells.len == 0) {
+        std.debug.print("Failed to allocate points!\n", .{});
+        return;
+    }
 
     if (self._indices.len != points_in.len) {
         if (self._indices.len > 0) self._a.free(self._indices);
-        self._indices = self._a.alloc(usize, points_in.len * 4) catch unreachable;
-        for (self.points) |*point, i| {
-            point.* = Cell.calc(self.config, points_in[i]);
-            self._indices[i*4+0] = i*4+0;
-            self._indices[i*4+1] = i*4+1;
-            self._indices[i*4+2] = i*4+2;
-            self._indices[i*4+3] = i*4+3;
+        self._indices = self._a.alloc(usize, points_in.len*4) catch unreachable;
+        for (self._cells) |*point, i| {
+            const r = self.config.point_radius;
+            const offset = [2]f32{if (i & 1 == 0) -r else r, if (i & 2 == 0) r else -r};
+            const p = Vec2{.x=points_in[i>>2][0] + offset[0], .y=points_in[i>>2][1] + offset[1]};
+            point.* = Cell.calc(self.config, p);
+            self._indices[i] = i;
         }
     } else {
-        for (self.points) |*point, i| {
-            point.* = Cell.calc(self.config, points_in[i]);
+        for (self._cells) |*point, i| {
+            const p = Vec2{.x=points_in[i][0], .y=points_in[i][1]};
+            point.* = Cell.calc(self.config, p);
         }
     }
 
-    std.sort.sort(usize, self._indices, self.points, lessThanIndexSort);
+    std.sort.sort(usize, self._indices, self._cells, lessThanIndexSort);
 
     self._quadtree_data = self._a.realloc(self._quadtree_data, self.config.max_depth * self._indices.len) catch self._quadtree_data;
     for (self._quadtree_data) |*s| s.int = 0;
 
-    _ = build_tree_branch(self.config, &self.info, self.points, self._indices, self._quadtree_data, 0, 0);
+    const length = buildTreeBranch(self.config, &self.info, self._cells, self._indices, self._quadtree_data, 0, 0);
+    self.points = self._a.realloc(self.points, points_in.len) catch self.points;
+    
+    std.debug.print("QuadTree takes up {} bytes | ", .{8*length});
+
+    for (self.points) |*point, i| {
+        point[0] = self._cells[i*4+0].hash;
+        point[1] = self._cells[i*4+1].hash;
+        point[2] = self._cells[i*4+2].hash;
+        point[3] = self._cells[i*4+3].hash;
+
+        std.sort.insertionSort(usize, point[0..], @as(u8, 0), struct {
+            pub fn lessThan(_: u8, lhs: usize, rhs: usize) bool {
+                return lhs < rhs;
+            }}.lessThan);
+        var head: usize = 0;
+        var last: usize = ~@as(usize, 0);
+        for (point) |p| {
+            if (p == last) continue;
+            last = p;
+            point[head] = p;
+            head += 1;
+        }
+
+        for (point[head..]) |*p| {
+            p.* = ~@as(usize, 0);
+        }
+    }
 }
 
 //Takes a layer and does all the necessary operations for it 
-fn build_tree_branch(config: Config, info: *Info, cells: [][4]Cell, indices: []const usize,
+fn buildTreeBranch(config: Config, info: *Info, cells: []Cell, indices: []const usize,
                      data: []Word, begin_depth: u6, offset_index: usize) usize {
     if (begin_depth >= config.max_depth) {
         var cur_index = offset_index;
-        var added: [128]usize = undefined;
-        var added_len: usize = 0;
-        outer: for (indices[0..]) |index| {
-            const i_mj = index >> 2;
-            const i_mi = index % 4;
-            for (added[0..added_len]) |a| {
-                if (a == i_mj) continue :outer;
-            }
-            added[added_len] = i_mj;
-            added_len += 1;
+        for (indices[0..]) |i| {
 
-            cells[i_mj][i_mi].depth = @truncate(u6, begin_depth);
-            data[cur_index].point = Point{.reference=@truncate(u56, index)};
+            cells[i].depth = @truncate(u6, begin_depth);
+            cells[i].hash = @truncate(u56, offset_index - 1);
+            data[cur_index].point = Point{.reference=@truncate(u56, i)};
+
             cur_index += 1;
             info.points += 1;
         }
+        std.sort.insertionSort(Word, data[begin_depth+1..cur_index], @as(u8, 0), struct {
+            pub fn lessThan(_: u8, lhs: Word, rhs: Word) bool {
+                return lhs.point.reference < rhs.point.reference;
+            }}.lessThan);
+        var head: u56 = 0;
+        var l: usize = ~@as(usize, 0);
+        for (data[begin_depth+1..cur_index]) |p| {
+            if (p.point.reference == l) continue;
+            l = p.point.reference;
+            data[begin_depth+1+head] = p;
+            head += 1;
+        }
+        cur_index = begin_depth+1+head;
         return cur_index - offset_index;
     }
 
     var farthest = [4]usize{0,0,0,0};
-    for (indices) |index, i| {
-        const i_mj = index >> 2;
-        const i_mi = index % 4;
-        if (cells[i_mj][i_mi].depth == 0) break;
-        farthest[cells[i_mj][i_mi].level(begin_depth)] = i;
+    for (indices) |i, index| {
+        if (cells[i].depth == 0) break;
+        farthest[cells[i].level(begin_depth)] = index;
     }
 
     var last: usize = 0;
@@ -163,29 +170,44 @@ fn build_tree_branch(config: Config, info: *Info, cells: [][4]Cell, indices: []c
         if (qtl == 0) continue;
         info.qtls += 1;
         if (qtl - last <= config.node_count_in_one*4) {
-            data[cur_index].qtl = .{.subgroup=@truncate(u2, subgroup), .depth = @truncate(u6, begin_depth), .word_size=@truncate(u48, qtl-last)};
-            cur_index += 1;
-            var added: [128]usize = undefined;
-            var added_len: usize = 0;
-            outer: for (indices[last..qtl]) |index| {
-                const i_mj = index >> 2;
-                const i_mi = index % 4;
-                for (added[0..added_len]) |a| {
-                    if (a == i_mj) continue :outer;
-                }
-                added[added_len] = i_mj;
-                added_len += 1;
+            data[cur_index].qtl = .{
+                .subgroup=@truncate(u2, subgroup),
+                .depth = @truncate(u6, begin_depth),
+                .word_size=@truncate(u48, qtl-last)
+            };
+            const qtl_index = cur_index;
 
-                if (cells[i_mj][i_mi].depth == 0) break;
+            cur_index += 1;
+            for (indices[last..qtl]) |i| {
+
+                if (cells[i].depth == 0) break;
                 info.points += 1;
 
-                cells[i_mj][i_mi].depth = @truncate(u6, begin_depth);
-                data[cur_index].point = .{.reference=@truncate(u56, i_mj)};
+                cells[i].depth = @truncate(u6, begin_depth);
+                cells[i].hash = @truncate(u56, qtl_index);
+                data[cur_index].point = .{.reference=@truncate(u56, i)};
                 cur_index += 1;
             }
+            std.sort.insertionSort(Word, data[qtl_index+1..cur_index], @as(u8, 0), struct {
+                pub fn lessThan(_: u8, lhs: Word, rhs: Word) bool {
+                    return lhs.point.reference < rhs.point.reference;
+                }}.lessThan);
+            var head: u56 = 0;
+            var l: usize = ~@as(usize, 0);
+            for (data[qtl_index+1..cur_index]) |p| {
+                if (p.point.reference == l) continue;
+                l = p.point.reference;
+                data[qtl_index+1+head] = p;
+                head += 1;
+            }
+            cur_index = qtl_index+1+head;
         } else {
-            const size = build_tree_branch(config, info, cells, indices[last..qtl], data, begin_depth+1, cur_index+1);
-            data[cur_index].qtl = .{.subgroup=@truncate(u2, subgroup), .depth = @truncate(u6, begin_depth), .word_size=@truncate(u48, size)};
+            const size = buildTreeBranch(config, info, cells, indices[last..qtl], data, begin_depth+1, cur_index+1);
+            data[cur_index].qtl = .{
+                .subgroup=@truncate(u2, subgroup),
+                .depth = @truncate(u6, begin_depth),
+                .word_size=@truncate(u48, size),
+            };
             cur_index += 1 + size;
         }
         last = qtl;
@@ -198,6 +220,8 @@ const VertexArray = @import("buffer.zig").VertexArray;
 const Shader = @import("shader.zig").Shader;
 const Camera = @import("camera.zig");
 pub fn draw(self: QuadTree, camera: Camera) void {
+    //const t = common.Timer(@src());
+    //defer _ = t.endPrint();
 
     const s = struct {
         var initialized = false;
@@ -268,9 +292,9 @@ pub fn draw(self: QuadTree, camera: Camera) void {
     s.buffer.subData(0, head * @sizeOf([2]Vec2), common.toData(s.draw_data)) catch {};
 
     const model_matrix = Mat3{.data = .{
-        self.config.width/2, 0, 0,
-        0, self.config.height/2, 0,
-        -self.config.position[0], -self.config.position[1], 1,
+        self.config.size.x/2,    0,                      0,
+        0,                      self.config.size.y/2,   0,
+        -self.config.pos.x,    -self.config.pos.y,      1,
     }};
 
     s.vao.bind();
@@ -280,15 +304,15 @@ pub fn draw(self: QuadTree, camera: Camera) void {
     VertexArray.drawArrays(.lines, 0, head*2);
 }
 
-pub fn print(self: QuadTree) void {
+pub fn print(data: []Word) void {
     var tabs: usize = 0;
-    for (self._quadtree_data) |data, i| {
+    for (data) |word, i| {
         std.debug.print("{}\t|", .{i});
-        switch (data.qtl.code) {
+        switch (word.qtl.code) {
             .End => {std.debug.print("End", .{}); break;},
             
             .Level => {
-                const qtl = data.qtl;
+                const qtl = word.qtl;
                 tabs = qtl.depth;
                 {
                     var j: usize = 0; 
@@ -302,12 +326,13 @@ pub fn print(self: QuadTree) void {
                     var j: usize = 0; 
                     while (j < tabs+1) : (j += 1) std.debug.print("  ", .{});
                 }
-                const point = data.point;
+                const point = word.point;
                 std.debug.print("Point[index: {}]", .{point.reference});
             }
         }
         std.debug.print("\n", .{});
     }
+    std.debug.print("\n", .{});
 }
 
 const Codes = enum (u8) {
@@ -318,45 +343,19 @@ const Codes = enum (u8) {
 
 const Word = packed union {
 
-    qtl: QuadTreeLevel,
+    qtl: QTL,
     point: Point,
     int: u64,
 
 };
 
-const QuadTreeLevel = packed struct {
-
+const QTL = packed struct {
     const _size = @sizeOf(@This());
 
     word_size: u48,
     depth: u6,
     subgroup: u2,
     code: Codes = .Level,
-
-    pub fn getLevel(index: usize, qt: []Word, subgroup: u32) ?usize {
-        const self = qt[index].qtl;
-
-        var i = index + 1;
-        var counter: u8 = 0;
-        while (counter < 4) : (counter += 1) {
-            if (qt[i].qtl.code != .Level) return null;
-            
-            const next_level = qt[i].qtl;
-            if (next_level.depth != self.depth + 1) return null;
-            
-            if (next_level.subgroup == subgroup) return next_level;
-            i += 1 + next_level.word_size;
-        }
-        return null;
-    }
-    
-    pub fn getPointCount(index: usize, qt: []Word) u32 {
-        const self = qt[index].qtl;
-        const next_level = qt[index+1].point;
-        if (next_level.code != .Point) return 0;
-        
-        return self.word_size;
-    }
 };
 
 const Point = packed struct {
@@ -364,7 +363,6 @@ const Point = packed struct {
 
     reference: u56,
     code: Codes = .Point,
-
 };
 
 const Cell = struct {
@@ -374,28 +372,10 @@ const Cell = struct {
     hash: u56,
     depth: u8,
 
-    pub fn calc(config: Config, pos: [2]f32) [4]Cell {
-        var cells: [4]Cell = [_]Cell{.{.hash=0, .depth=0},}**4;
-        const r = config.point_radius;
-         for (cells) |*cell, i| {
-            var p: [2]f32 = undefined;
-            p[0] = pos[0] + (if (i & 1 == 0) -r else r);
-            p[1] = pos[1] + (if (i & 2 == 0) r else -r);
-            const candidate = Cell.calcPoint(config, p);
-            for (cells) |c| {
-                if (c.depth > 0) {
-                    if (c.hash == candidate.hash) break;
-                }
-            } else 
-                cell.* = candidate;
-        }
-        return cells;
-    }
-
-    pub fn calcPoint(config: Config, pos: [2]f32) Cell {
+    pub fn calc(config: Config, pos: Vec2) Cell {
         if (config.max_depth > MAX_DEPTH) return Cell{.hash=0, .depth=0};
-        var xpos = 2 * (pos[0] - config.position[0])/config.width;
-        var ypos = 2 * (pos[1] - config.position[1])/config.height;
+        var xpos = 2 * (pos.x - config.pos.y)/config.size.x;
+        var ypos = 2 * (pos.y - config.pos.x)/config.size.y;
 
         if (xpos > 1 or xpos < -1 or
             ypos > 1 or ypos < -1) {
@@ -404,23 +384,28 @@ const Cell = struct {
 
         var cell: Cell = .{.hash=0, .depth=@truncate(u6, config.max_depth)};
 
-        var i: usize = 0;
+        var i: u56 = 0;
         while (i < config.max_depth) : (i += 1) {
             const x_flag: u56 = if(xpos > 0) 1 else 0;
             const y_flag: u56 = if(ypos > 0) 1 else 0;
-            cell.hash |= Cell.transform(@truncate(u56, i), x_flag | (1 - y_flag)*2);
+            cell.set(i, x_flag | (1 & ~(y_flag))*2);
 
             xpos = (xpos*2) + (1 - 2*@intToFloat(f32, x_flag));
             ypos = (ypos*2) + (1 - 2*@intToFloat(f32, y_flag));
         }
 
-        cell.depth = @truncate(u6, i);
         return cell;
     }
 
     pub inline fn transform(lvl: u56, sb: u56) u56 {
-        if (lvl > Cell.MAX_DEPTH-1) return 0;
         return sb << @intCast(u6, 2*(Cell.MAX_DEPTH - lvl - 1));
+    }
+
+    pub inline fn set(self: *Cell, l: u64, sb: u64) void {
+        if (sb > 3) return;
+        if (l >= Cell.MAX_DEPTH) return;
+        self.hash &= ~transform(@truncate(u56, l), 3);
+        self.hash |= transform(@truncate(u56, l), @truncate(u56, sb));
     }
 
     pub inline fn level(self: Cell, l: u6) u2 {
@@ -485,12 +470,12 @@ test "Build QuadTree" {
         std.debug.print("{}: ", .{i});
         const i_mi = index % 4;
         const i_mj = index >> 2;
-        const cell = tree.points[i_mj][i_mi];
+        const cell = tree._cells[i_mj][i_mi];
         var k: u6 = 0;
         while (!(k > Cell.MAX_DEPTH)) : (k += 1) {
             std.debug.print("{}", .{cell.level(k)});
         }
-        std.debug.print(" : {}\n", .{tree.points[i_mj][i_mi].hash});
+        std.debug.print(" : {}\n", .{tree._cells[i_mj][i_mi].hash});
     }
 
     std.debug.print("Index Array:\n{any}\n", .{tree._indices});
