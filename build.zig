@@ -25,24 +25,28 @@ pub fn build(b: *std.build.Builder) void {
         imgui++"backends/imgui_impl_glfw.cpp",
         "deps/cimgui/cimgui.cpp",
     }, &[_][]const u8 {"-DIMGUI_IMPL_API=extern \"C\""});
-    const libs = [_][:0]const u8{
-        "glu",
-        "GL",
-        "glew",
-    };
 
     exe.addLibPath("deps/lib/");
     exe.addIncludeDir("deps/include/");
     exe.addIncludeDir("deps/cimgui/");
     exe.addIncludeDir(imgui);
     exe.addPackagePath("glfw", "deps/mach-glfw/src/main.zig");
+    
+    if (target.isWindows()) {
+        exe.linkSystemLibrary("gdi32");
+        exe.linkSystemLibrary("opengl32");
+        exe.linkSystemLibrary("shell32");
+        exe.linkSystemLibrary("glew32s");
+    } else {
+        exe.linkSystemLibrary("glu");
+        exe.linkSystemLibrary("GL");
+        exe.linkSystemLibrary("glew");
+    }
+
     glfw.link(b, exe, .{});
 
     exe.linkLibC();
     exe.linkLibCpp();
-    for (libs) |lib| {
-        exe.linkSystemLibrary(lib);
-    }
 
     exe.setTarget(target);
     exe.setBuildMode(mode);
