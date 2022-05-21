@@ -31,12 +31,12 @@ pub const Info = struct {
 
 pub const Timings = struct {
 
-    var build: i128 = 0;
-    var gen_points: i128 = 0;
-    var sort_points: i128 = 0;
-    var build_quadtree: i128 = 0;
-    var draw: i128 = 0;
-    var second_sort: i128 = 0;
+    pub var build: i128 = 0;
+    pub var gen_points: i128 = 0;
+    pub var sort_points: i128 = 0;
+    pub var build_quadtree: i128 = 0;
+    pub var draw: i128 = 0;
+    pub var second_sort: i128 = 0;
 
 };
 
@@ -78,7 +78,7 @@ fn lessThanIndexSort(context: []Cell, lhs: usize, rhs: usize) bool {
 
 pub fn build(self: *QuadTree, points_in: []const [2]f32) void {
     const t = common.Timer(@src());
-    defer Timings.build = t.endPrint();
+    defer Timings.build = t.end();
 
     self.info = .{};
     self._cells = self._a.realloc(self._cells, points_in.len*4) catch self._cells;
@@ -91,7 +91,6 @@ pub fn build(self: *QuadTree, points_in: []const [2]f32) void {
     if (self._indices.len != points_in.len) {
         if (self._indices.len > 0) self._a.free(self._indices);
         self._indices = self._a.alloc(usize, points_in.len*4) catch unreachable;
-        var start = common.Timer(@src());
         for (self._cells) |*point, i| {
             const r = self.config.point_radius;
             const offset = [2]f32{if (i & 1 == 0) -r else r, if (i & 2 == 0) r else -r};
@@ -99,29 +98,33 @@ pub fn build(self: *QuadTree, points_in: []const [2]f32) void {
             point.* = Cell.calc(self.config, p);
             self._indices[i] = i;
         }
-        const nano_seconds = start.end();
-        std.debug.print("Cell calculation took: {}ns\n", .{nano_seconds});
     } else {
-        var start = common.Timer(@src());
         for (self._cells) |*point, i| {
             const p = Vec2{.x=points_in[i][0], .y=points_in[i][1]};
             point.* = Cell.calc(self.config, p);
         }
-        const nano_seconds = start.end();
-        std.debug.print("Cell calculation took: {}ns\n", .{nano_seconds});
     }
     Timings.gen_points = t_gen_points.end();
 
+    //Sorting indices after point hash 
+    const t_sort_points = common.Timer(@src());
     std.sort.sort(usize, self._indices, self._cells, lessThanIndexSort);
+    Timings.sort_points = t_sort_points.end();
 
     self._quadtree_data = self._a.realloc(self._quadtree_data, self.config.max_depth * self._indices.len) catch self._quadtree_data;
     for (self._quadtree_data) |*s| s.int = 0;
 
+    //Building tree
+    const t_build_quadtree = common.Timer(@src());
     const length = buildTreeBranch(self.config, &self.info, self._cells, self._indices, self._quadtree_data, 0, 0);
+    Timings.build_quadtree = t_build_quadtree.end();
+
     self.points = self._a.realloc(self.points, points_in.len) catch self.points;
     
-    std.debug.print("QuadTree takes up {} bytes | ", .{8*length});
-
+    std.debug.print("QuadTree takes up {} bytes \n", .{8*length});
+    
+    //Extracting point locations
+    const t_second_sort = common.Timer(@src());
     for (self.points) |*point, i| {
         point[0] = self._cells[i*4+0].hash;
         point[1] = self._cells[i*4+1].hash;
@@ -145,6 +148,7 @@ pub fn build(self: *QuadTree, points_in: []const [2]f32) void {
             p.* = ~@as(usize, 0);
         }
     }
+    Timings.second_sort = t_second_sort.end();
 }
 
 //Takes a layer and does all the necessary operations for it 
@@ -247,8 +251,8 @@ const VertexArray = @import("buffer.zig").VertexArray;
 const Shader = @import("shader.zig").Shader;
 const Camera = @import("camera.zig");
 pub fn draw(self: QuadTree, camera: Camera) void {
-    //const t = common.Timer(@src());
-    //defer _ = t.endPrint();
+    const t = common.Timer(@src());
+    defer Timings.draw = t.end();
 
     const s = struct {
         var initialized = false;

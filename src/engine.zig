@@ -213,6 +213,15 @@ pub fn draw(self: Engine, camera: Camera) void {
         QuadTree.print(self.qt._quadtree_data);
     }
     _ = c.igCheckbox("Draw Quadtree", &S.draw_quadtree);
+    const t_build = @truncate(i64, @divFloor(QuadTree.Timings.build, 1000));
+    const t_gen_points = @truncate(i64, @divFloor(QuadTree.Timings.gen_points, 1000));
+    const t_sort_points = @truncate(i64, @divFloor(QuadTree.Timings.sort_points, 1000));
+    const t_build_quadtree = @truncate(i64, @divFloor(QuadTree.Timings.build_quadtree, 1000));
+    const t_second_sort = @truncate(i64, @divFloor(QuadTree.Timings.second_sort, 1000));
+    const t_draw = @truncate(i64, @divFloor(QuadTree.Timings.draw, 1000));
+    _ = c.igText("Timings:\n\tBuild: %lld\n\tGen Points: %lld\n\tSort Points: %lld\n\tBuild Quadtree: %lld\n\tSecond Sort: %lld\n\tDraw: %lld", 
+            t_build, t_gen_points, t_sort_points, t_build_quadtree, t_second_sort, t_draw
+        );
     _ = c.igEnd();
 
     if (S.draw_quadtree)
