@@ -29,6 +29,17 @@ pub const Info = struct {
     points: usize = 0,
 };
 
+pub const Timings = struct {
+
+    var build: i128 = 0;
+    var gen_points: i128 = 0;
+    var sort_points: i128 = 0;
+    var build_quadtree: i128 = 0;
+    var draw: i128 = 0;
+    var second_sort: i128 = 0;
+
+};
+
 config: Config,
 info: Info = .{},
 
@@ -67,7 +78,7 @@ fn lessThanIndexSort(context: []Cell, lhs: usize, rhs: usize) bool {
 
 pub fn build(self: *QuadTree, points_in: []const [2]f32) void {
     const t = common.Timer(@src());
-    defer _ = t.endPrint();
+    defer Timings.build = t.endPrint();
 
     self.info = .{};
     self._cells = self._a.realloc(self._cells, points_in.len*4) catch self._cells;
@@ -76,6 +87,7 @@ pub fn build(self: *QuadTree, points_in: []const [2]f32) void {
         return;
     }
 
+    const t_gen_points = common.Timer(@src());
     if (self._indices.len != points_in.len) {
         if (self._indices.len > 0) self._a.free(self._indices);
         self._indices = self._a.alloc(usize, points_in.len*4) catch unreachable;
@@ -98,6 +110,7 @@ pub fn build(self: *QuadTree, points_in: []const [2]f32) void {
         const nano_seconds = start.end();
         std.debug.print("Cell calculation took: {}ns\n", .{nano_seconds});
     }
+    Timings.gen_points = t_gen_points.end();
 
     std.sort.sort(usize, self._indices, self._cells, lessThanIndexSort);
 
