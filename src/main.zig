@@ -224,6 +224,8 @@ pub fn main() anyerror!void {
 
     var show_demo_window: bool = false;
     var draw_quadtree: bool = false;
+    var tick_per_frame: i32 = 1;
+
     while (!window.shouldClose()) {
 
         c.ImGui_ImplOpenGL3_NewFrame();
@@ -236,8 +238,12 @@ pub fn main() anyerror!void {
         _ = c.igBegin("Custom Window", 0, 0);
         _ = c.igCheckbox("Show Demo Window", &show_demo_window);
 
-        if (draw_quadtree)
-            engine.doTick();
+        if (draw_quadtree) {
+            var i: u32 = 0;
+            while (i < tick_per_frame) : (i += 1) {
+                engine.doTick();
+            }
+        }
 
         engine.draw(myCamera);
 
@@ -250,6 +256,8 @@ pub fn main() anyerror!void {
             v.printMatrix(myCamera.getAssembled());
         }
         _ = c.igInputFloat2("Lines", &direction_pos.x, "%.3f", 0);
+        _ = c.igSliderInt("Ticks per frame", &tick_per_frame, 1, 100, "%d", 0);
+        _ = c.igSliderInt("Nodes In One", @ptrCast([*c]c_int, &engine.qt.config.node_count_in_one), 1, 18, "%d", 0);
 
         _ = c.igCheckbox("Draw quadtree", &draw_quadtree);
 

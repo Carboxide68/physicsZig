@@ -87,12 +87,12 @@ pub fn build(self: *QuadTree, points_in: []const [2]f32) void {
         return;
     }
 
-    const t_gen_points = common.Timer(@src());
     if (self._indices.len != points_in.len) {
         if (self._indices.len > 0) self._a.free(self._indices);
         self._indices = self._a.alloc(usize, points_in.len*4) catch unreachable;
     }
 
+    const t_gen_points = common.Timer(@src());
     for (self._cells) |*point, i| {
         const r = self.config.point_radius;
         const offset = [2]f32{if (i & 1 == 0) -r else r, if (i & 2 == 0) r else -r};
@@ -115,6 +115,7 @@ pub fn build(self: *QuadTree, points_in: []const [2]f32) void {
     const t_build_quadtree = common.Timer(@src());
     const length = buildTreeBranch(self.config, &self.info, self._cells, self._indices, self._quadtree_data, 0, 0);
     Timings.build_quadtree = t_build_quadtree.end();
+    self._quadtree_data[length].int = 0;
 
     self.points = self._a.realloc(self.points, points_in.len) catch self.points;
     
@@ -128,7 +129,7 @@ pub fn build(self: *QuadTree, points_in: []const [2]f32) void {
         point[2] = self._cells[i*4+2].hash;
         point[3] = self._cells[i*4+3].hash;
 
-        std.sort.insertionSort(usize, point[0..], {}, struct {
+        std.sort.sort(usize, point[0..], {}, struct {
             pub fn lessThan(_: void, lhs: usize, rhs: usize) bool {
                 return lhs < rhs;
             }}.lessThan);
@@ -155,7 +156,7 @@ fn buildTreeBranch(config: Config, info: *Info, cells: []Cell, indices: []const 
         var cur_index = offset_index;
         for (indices) |i| {
 
-            cells[i].depth = @truncate(u6, begin_depth-1);
+            cells[i].depth = @truncate(u6, begin_depth);
             cells[i].hash = @truncate(u56, offset_index - 1);
             data[cur_index].point = Point{.reference=@truncate(u56, i>>2)};
 
@@ -164,20 +165,20 @@ fn buildTreeBranch(config: Config, info: *Info, cells: []Cell, indices: []const 
         }
         
         //Make sure only unique references to points exists in one cell
-        std.sort.insertionSort(Word, data[begin_depth+1..cur_index], @as(u8, 0), struct {
+        std.sort.sort(Word, data[offset_index+1..cur_index], @as(u8, 0), struct {
             pub fn lessThan(_: u8, lhs: Word, rhs: Word) bool {
                 return lhs.point.reference < rhs.point.reference;
             }}.lessThan);
         var head: u56 = 0;
         var l: usize = ~@as(usize, 0);
-        for (data[begin_depth+1..cur_index]) |p| {
+        for (data[offset_index+1..cur_index]) |p| {
             if (p.point.reference == l) continue;
             l = p.point.reference;
-            data[begin_depth+1+head] = p;
+            data[offset_index+1+head] = p;
             head += 1;
         }
 
-        cur_index = begin_depth+1+head;
+        cur_index = offset_index+1+head;
         return cur_index - offset_index;
     }
 
@@ -208,14 +209,14 @@ fn buildTreeBranch(config: Config, info: *Info, cells: []Cell, indices: []const 
                 if (cells[i].depth == 0) break;
                 info.points += 1;
 
-                cells[i].depth = @truncate(u6, begin_depth);
+                cells[i].depth = @truncate(u6, begin_depth+1);
                 cells[i].hash = @truncate(u56, qtl_index);
                 data[cur_index].point = .{.reference=@truncate(u56, i>>2)};
                 cur_index += 1;
             }
 
             //Make sure only unique references to points exists in one cell
-            std.sort.insertionSort(Word, data[qtl_index+1..cur_index], {}, struct {
+            std.sort.sort(Word, data[qtl_index+1..cur_index], {}, struct {
                 pub fn lessThan(_: void, lhs: Word, rhs: Word) bool {
                     return lhs.point.reference < rhs.point.reference;
                 }}.lessThan);
@@ -293,7 +294,7 @@ pub fn draw(self: QuadTree, camera: Camera) void {
             const sb = word.qtl.subgroup;
             cur_hash.depth = word.qtl.depth;
 
-            cur_hash.hash &= ~((~@as(u56, 0)) >> @truncate(u6, 2*cur_hash.depth));
+            cur_hash.hash &= ~((~@as(u56, 0)) >> @truncate(u6, 2*(cur_hash.depth)));
             cur_hash.hash |= Cell.transform(cur_hash.depth, sb);
 
             start_pos = .{.x=0, .y=0};
@@ -307,7 +308,7 @@ pub fn draw(self: QuadTree, camera: Camera) void {
                 start_pos.y += if (y_flag == 0)  1*fj else -1*fj;
             }
 
-            const box_len = std.math.pow(f32, 2, -@intToFloat(f32, word.qtl.depth));
+            const box_len = std.math.pow(f32, 2, -@intToFloat(f32, cur_hash.depth));
             var new_x = start_pos.x + subgroup_lookup[sb].x * box_len;
             var new_y = start_pos.y + subgroup_lookup[sb].y * box_len;
 
@@ -354,7 +355,7 @@ pub fn print(data: []Word) void {
                     while (j < tabs+1) : (j += 1) std.debug.print("  ", .{});
                 }
                 const point = word.point;
-                std.debug.print("Point[index: {}]", .{point.reference});
+                std.debug.print("Point[index: {}] - ", .{point.reference});
             }
         }
         std.debug.print("\n", .{});
@@ -424,6 +425,13 @@ const Cell = struct {
         }
 
         return cell;
+    }
+
+    pub fn print(self: Cell) void {
+        var i: usize = 0;
+        while (i < self.depth) : (i += 1) {
+            std.debug.print("{}", .{self.level(@truncate(u6, i))});
+        }
     }
 
     pub inline fn transform(lvl: u56, sb: u56) u56 {

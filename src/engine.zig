@@ -53,11 +53,11 @@ pub const Nodes = struct {
 
 pub const Config = struct {
 
-    node_count: usize = 1000,
+    node_count: usize = 10000,
     node_radius: f32 = 0.02,
 
-    size: Vec2 = .{.x=1,.y=1},
-    time_step: f32 = 0.0005,
+    size: Vec2 = .{.x=10,.y=10},
+    time_step: f32 = 0.005,
 };
 
 const Engine = @This();
@@ -93,6 +93,7 @@ pub fn init(a: std.mem.Allocator, config: Config) Engine {
 
     engine.qt = QuadTree.init(a, 10, Vec2.init(0), config.size);
     engine.qt.config.node_count_in_one = 6;
+    engine.qt.config.point_radius = config.node_radius;
     engine.config = config;
 
     engine.box = .{
@@ -105,10 +106,10 @@ pub fn init(a: std.mem.Allocator, config: Config) Engine {
 }
 
 fn checkAndCollide(node1: Node, node2: Node, config: Config) bool {
-    const r = config.node_radius * 2;
+    const r = config.node_radius;
     const between = node1.pos.sub(node2.pos.*);
     const len_between2 = between.dot(between);
-    if (r * r < len_between2) return false;
+    if (r * r * 4 < len_between2) return false;
     
     const velo_diff = node1.vel.sub(node2.vel.*);
     const velo_betw_dot = velo_diff.dot(between); 
@@ -141,6 +142,13 @@ fn lineCollide(node: Node, line: [2]Vec2, config: Config) Vec2 {
 
 pub fn doTick(self: *Engine) void {
 
+    const S = struct {
+        var do = true;
+        var hit_last = false;
+    };
+
+    if (!S.do) return;
+
     self.qt.build(@ptrCast([*][2]f32, self.nodes.positions.ptr)[0..self.nodes.positions.len]);
 
     const time = common.Timer(@src());
@@ -168,9 +176,27 @@ pub fn doTick(self: *Engine) void {
         this.vel.* = this.vel.add(line_vel);
         this.pos.* = this.pos.add(this.vel.sMult(ts));
     }
+    const first = self.nodes.get(0);
+    const second = self.nodes.get(1);
+    if (second.pos.sub(first.pos.*).length2() <= 4 * self.config.node_radius * self.config.node_radius) {
+        if (S.hit_last) S.do = false;
+        S.hit_last = true;
+        //for (self.qt.points) |point| {
+        //    for (point) |p| {
+        //        std.debug.print(" {} |", .{p});
+        //    }
+        //    std.debug.print("\n", .{});
+        //}
+        for (self.qt._cells) |cell| {
+            std.debug.print(" {} |", .{cell.hash});
+        }
+        std.debug.print("\n", .{});
+    } else {
+        S.hit_last = false;
+    }
 }
 
-pub fn draw(self: Engine, camera: Camera) void {
+pub fn draw(self: *Engine, camera: Camera) void {
 
     const S = struct {
         var vao: VertexArray = undefined;
