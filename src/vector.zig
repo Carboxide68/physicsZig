@@ -177,6 +177,7 @@ pub fn Vec3T(comptime T: type) type {
             return @ptrCast(*const [_len]T, self);
         }
     };
+
 }
 pub fn Vec4T(comptime T: type) type {
     return packed struct {

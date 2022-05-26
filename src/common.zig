@@ -1,4 +1,5 @@
 const std = @import("std");
+const c = @import("c.zig");
 
 const heap = std.heap;
 
@@ -40,4 +41,16 @@ pub const Time = struct {
 
 pub fn Timer(src: std.builtin.SourceLocation) Time {
     return Time{.src=src, .now = std.time.nanoTimestamp()};
+}
+
+pub fn imButton(text: [:0]const u8) bool {
+    var text_size: c.ImVec2 = undefined;
+    if (text.len == 0) {
+        text_size = c.ImVec2{.x=0, .y=0};
+    } else {
+        c.igCalcTextSize(&text_size, text.ptr, &text[text.len], true, 1000.0);
+    }
+    text_size.x += 8;
+    text_size.y += 8;
+    return c.igButton(text, text_size);
 }

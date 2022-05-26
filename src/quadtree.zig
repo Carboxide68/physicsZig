@@ -29,6 +29,17 @@ pub const Info = struct {
     points: usize = 0,
 };
 
+pub const Timings = struct {
+
+    var build: i128 = 0;
+    var gen_points: i128 = 0;
+    var sort_points: i128 = 0;
+    var build_quadtree: i128 = 0;
+    var draw: i128 = 0;
+    var second_sort: i128 = 0;
+
+};
+
 config: Config,
 info: Info = .{},
 
@@ -67,7 +78,7 @@ fn lessThanIndexSort(context: []Cell, lhs: usize, rhs: usize) bool {
 
 pub fn build(self: *QuadTree, points_in: []const [2]f32) void {
     const t = common.Timer(@src());
-    defer _ = t.endPrint();
+    defer Timings.build = t.endPrint();
 
     self.info = .{};
     self._cells = self._a.realloc(self._cells, points_in.len*4) catch self._cells;
@@ -76,9 +87,11 @@ pub fn build(self: *QuadTree, points_in: []const [2]f32) void {
         return;
     }
 
+    const t_gen_points = common.Timer(@src());
     if (self._indices.len != points_in.len) {
         if (self._indices.len > 0) self._a.free(self._indices);
         self._indices = self._a.alloc(usize, points_in.len*4) catch unreachable;
+        var start = common.Timer(@src());
         for (self._cells) |*point, i| {
             const r = self.config.point_radius;
             const offset = [2]f32{if (i & 1 == 0) -r else r, if (i & 2 == 0) r else -r};
@@ -86,12 +99,18 @@ pub fn build(self: *QuadTree, points_in: []const [2]f32) void {
             point.* = Cell.calc(self.config, p);
             self._indices[i] = i;
         }
+        const nano_seconds = start.end();
+        std.debug.print("Cell calculation took: {}ns\n", .{nano_seconds});
     } else {
+        var start = common.Timer(@src());
         for (self._cells) |*point, i| {
             const p = Vec2{.x=points_in[i][0], .y=points_in[i][1]};
             point.* = Cell.calc(self.config, p);
         }
+        const nano_seconds = start.end();
+        std.debug.print("Cell calculation took: {}ns\n", .{nano_seconds});
     }
+    Timings.gen_points = t_gen_points.end();
 
     std.sort.sort(usize, self._indices, self._cells, lessThanIndexSort);
 
@@ -109,14 +128,14 @@ pub fn build(self: *QuadTree, points_in: []const [2]f32) void {
         point[2] = self._cells[i*4+2].hash;
         point[3] = self._cells[i*4+3].hash;
 
-        std.sort.insertionSort(usize, point[0..], @as(u8, 0), struct {
-            pub fn lessThan(_: u8, lhs: usize, rhs: usize) bool {
+        std.sort.insertionSort(usize, point[0..], {}, struct {
+            pub fn lessThan(_: void, lhs: usize, rhs: usize) bool {
                 return lhs < rhs;
             }}.lessThan);
         var head: usize = 0;
         var last: usize = ~@as(usize, 0);
-        for (point) |p| {
-            if (p == last) continue;
+        for (point) |p, k| {
+            if (p == last or self._cells[i*4+k].depth == 0) continue;
             last = p;
             point[head] = p;
             head += 1;
@@ -133,15 +152,17 @@ fn buildTreeBranch(config: Config, info: *Info, cells: []Cell, indices: []const 
                      data: []Word, begin_depth: u6, offset_index: usize) usize {
     if (begin_depth >= config.max_depth) {
         var cur_index = offset_index;
-        for (indices[0..]) |i| {
+        for (indices) |i| {
 
             cells[i].depth = @truncate(u6, begin_depth);
             cells[i].hash = @truncate(u56, offset_index - 1);
-            data[cur_index].point = Point{.reference=@truncate(u56, i)};
+            data[cur_index].point = Point{.reference=@truncate(u56, i>>2)};
 
             cur_index += 1;
             info.points += 1;
         }
+        
+        //Make sure only unique references to points exists in one cell
         std.sort.insertionSort(Word, data[begin_depth+1..cur_index], @as(u8, 0), struct {
             pub fn lessThan(_: u8, lhs: Word, rhs: Word) bool {
                 return lhs.point.reference < rhs.point.reference;
@@ -154,6 +175,7 @@ fn buildTreeBranch(config: Config, info: *Info, cells: []Cell, indices: []const 
             data[begin_depth+1+head] = p;
             head += 1;
         }
+
         cur_index = begin_depth+1+head;
         return cur_index - offset_index;
     }
@@ -161,7 +183,7 @@ fn buildTreeBranch(config: Config, info: *Info, cells: []Cell, indices: []const 
     var farthest = [4]usize{0,0,0,0};
     for (indices) |i, index| {
         if (cells[i].depth == 0) break;
-        farthest[cells[i].level(begin_depth)] = index;
+        farthest[cells[i].level(begin_depth)] = index+1;
     }
 
     var last: usize = 0;
@@ -173,11 +195,13 @@ fn buildTreeBranch(config: Config, info: *Info, cells: []Cell, indices: []const 
             data[cur_index].qtl = .{
                 .subgroup=@truncate(u2, subgroup),
                 .depth = @truncate(u6, begin_depth),
-                .word_size=@truncate(u48, qtl-last)
+                .word_size=@truncate(u48, qtl-last),
             };
+            const wordsize = &data[cur_index].qtl.word_size;
             const qtl_index = cur_index;
 
             cur_index += 1;
+            //Give the cells references to the current qtl and insert points
             for (indices[last..qtl]) |i| {
 
                 if (cells[i].depth == 0) break;
@@ -185,11 +209,13 @@ fn buildTreeBranch(config: Config, info: *Info, cells: []Cell, indices: []const 
 
                 cells[i].depth = @truncate(u6, begin_depth);
                 cells[i].hash = @truncate(u56, qtl_index);
-                data[cur_index].point = .{.reference=@truncate(u56, i)};
+                data[cur_index].point = .{.reference=@truncate(u56, i>>2)};
                 cur_index += 1;
             }
-            std.sort.insertionSort(Word, data[qtl_index+1..cur_index], @as(u8, 0), struct {
-                pub fn lessThan(_: u8, lhs: Word, rhs: Word) bool {
+
+            //Make sure only unique references to points exists in one cell
+            std.sort.insertionSort(Word, data[qtl_index+1..cur_index], {}, struct {
+                pub fn lessThan(_: void, lhs: Word, rhs: Word) bool {
                     return lhs.point.reference < rhs.point.reference;
                 }}.lessThan);
             var head: u56 = 0;
@@ -201,6 +227,7 @@ fn buildTreeBranch(config: Config, info: *Info, cells: []Cell, indices: []const 
                 head += 1;
             }
             cur_index = qtl_index+1+head;
+            wordsize.* = @truncate(u48, head+1);
         } else {
             const size = buildTreeBranch(config, info, cells, indices[last..qtl], data, begin_depth+1, cur_index+1);
             data[cur_index].qtl = .{
@@ -292,8 +319,8 @@ pub fn draw(self: QuadTree, camera: Camera) void {
     s.buffer.subData(0, head * @sizeOf([2]Vec2), common.toData(s.draw_data)) catch {};
 
     const model_matrix = Mat3{.data = .{
-        self.config.size.x/2,    0,                      0,
-        0,                      self.config.size.y/2,   0,
+        self.config.size.x,    0,                      0,
+        0,                      self.config.size.y,   0,
         -self.config.pos.x,    -self.config.pos.y,      1,
     }};
 
@@ -374,8 +401,8 @@ const Cell = struct {
 
     pub fn calc(config: Config, pos: Vec2) Cell {
         if (config.max_depth > MAX_DEPTH) return Cell{.hash=0, .depth=0};
-        var xpos = 2 * (pos.x - config.pos.y)/config.size.x;
-        var ypos = 2 * (pos.y - config.pos.x)/config.size.y;
+        var xpos = (pos.x - config.pos.x)/config.size.x;
+        var ypos = (pos.y - config.pos.y)/config.size.y;
 
         if (xpos > 1 or xpos < -1 or
             ypos > 1 or ypos < -1) {
@@ -385,13 +412,15 @@ const Cell = struct {
         var cell: Cell = .{.hash=0, .depth=@truncate(u6, config.max_depth)};
 
         var i: u56 = 0;
+        var exp = @as(u56, 1) << 2*(Cell.MAX_DEPTH - 1);
         while (i < config.max_depth) : (i += 1) {
             const x_flag: u56 = if(xpos > 0) 1 else 0;
             const y_flag: u56 = if(ypos > 0) 1 else 0;
-            cell.set(i, x_flag | (1 & ~(y_flag))*2);
+            cell.hash |= exp * (x_flag | y_flag << 1);
+            exp = exp >> 2;
 
-            xpos = (xpos*2) + (1 - 2*@intToFloat(f32, x_flag));
-            ypos = (ypos*2) + (1 - 2*@intToFloat(f32, y_flag));
+            xpos = (xpos*2) + (1 - 2.0*@intToFloat(f32, x_flag));
+            ypos = (ypos*2) + (1 - 2.0*@intToFloat(f32, y_flag));
         }
 
         return cell;

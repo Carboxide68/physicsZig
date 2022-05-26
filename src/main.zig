@@ -10,26 +10,13 @@ const VertexArray = buffer.VertexArray;
 const VoidBuffer = @import("voidbuffer.zig");
 const Camera = @import("camera.zig");
 const QuadTree = @import("quadtree.zig");
+const Engine = @import("engine.zig");
 const v = @import("vector.zig");
 const Vec2 = v.Vec2;
 
 const glsl_version = "#version 130";
 
 var ig_context: *c.ImGuiContext = undefined;
-
-const circle_polygon_size = 32;
-const circle_vertex_data = blk: {
-    var data: [circle_polygon_size + 1][2]f32 = undefined;
-    data[0] = .{ 0.0, 0.0 };
-
-    for (data[1..]) |*poly, i| {
-        const fi = @intToFloat(f32, i);
-        const fi2 = @intToFloat(f32, circle_polygon_size - 1);
-        const angle: f32 = std.math.pi * 2.0 * fi / fi2;
-        poly.* = .{ std.math.cos(angle), std.math.sin(angle) };
-    }
-    break :blk data;
-};
 
 var myCamera: Camera = undefined;
 
@@ -47,8 +34,8 @@ fn framebuffer_callback(window: glfw.Window, width: u32, height: u32) void {
     myCamera.updateCameraMatrix();
 }
 
-fn opengl_error_callback(source: c.GLenum, error_type: c.GLenum, 
-                        id: c.GLuint, severity: c.GLenum, 
+fn opengl_error_callback(source: c.GLenum, error_type: c.GLenum,
+                        id: c.GLuint, severity: c.GLenum,
                         length: c.GLsizei, message: [*c]const u8, _: ?*const anyopaque) callconv(.C) void {
     const m = message[0..@intCast(usize, length)];
     _ = id;
@@ -110,7 +97,7 @@ fn glfw_mouse_button_callback(window: glfw.Window, button: glfw.MouseButton, act
     _ = action;
     _ = mods;
     switch (button) {
-        
+
         .left => {
             if (action == .press) {
                 should_pan = true;
@@ -138,6 +125,8 @@ fn glInit(window: *glfw.Window) !void {
     window.setCursorPosCallback(glfw_mouse_callback);
     window.setKeyCallback(glfw_key_callback);
     window.setMouseButtonCallback(glfw_mouse_button_callback);
+
+    glfw.swapInterval(1.0) catch unreachable;
 
     const err = c.glewInit();
     if (c.GLEW_OK != err) {
@@ -175,7 +164,7 @@ fn glDeinit(window: *glfw.Window) void {
 }
 
 pub fn main() anyerror!void {
-        
+
     var window = &common.window;
 
     try glInit(window);
@@ -183,74 +172,56 @@ pub fn main() anyerror!void {
 
     c.glClearColor(0.3, 0.3, 0, 1);
 
-    var my_VAO = buffer.VertexArray.init();
-    defer my_VAO.destroy();
+    // const seed = 9;
+    // var prng = std.rand.DefaultPrng.init(seed);
+    // const rand = prng.random();
+    // const node_count: usize = 100;
+    // const width: f32 = 5;
+    // const height: f32 = 5;
+    // var nodes: [node_count][2]f32 = undefined;
+    // for (nodes) |*node| {
+    //     node[0] = (rand.float(f32) * 2 - 1) * width;
+    //     node[1] = (rand.float(f32) * 2 - 1) * height;
+    // }
 
-    var vertex_buffer = Buffer.init(@sizeOf(f32) * 2 * circle_vertex_data.len, .static_draw);
-    defer vertex_buffer.destroy();
+    // const radius: f32 = 0.01;
 
-    const seed = 9;
-    var prng = std.rand.DefaultPrng.init(seed);
-    const rand = prng.random();
-    const node_count: usize = 100;
-    const width: f32 = 5;
-    const height: f32 = 5;
-    var nodes: [node_count][2]f32 = undefined;
-    for (nodes) |*node| {
-        node[0] = (rand.float(f32) * 2 - 1) * width;
-        node[1] = (rand.float(f32) * 2 - 1) * height;
-    }
+    // var qt = QuadTree.init(common.a, 20, .{.x=0, .y=0}, .{.x=2*width,.y=2*height});
+    // qt.config.point_radius = radius;
+    // qt.build(nodes[0..]);
+    // qt.build(nodes[0..]);
+    // qt.build(nodes[0..]);
+    // QuadTree.print(qt._quadtree_data);
 
-    const radius: f32 = 0.01;
+    // my_VAO.bindVertexBuffer(vertex_buffer, 0, 0, 8);
+    // my_VAO.setLayout(0, 2, 0, buffer.GLType.float);
+    // const my_shader = try Shader.initFile("src/circle_shader.os");
+    // defer my_shader.destroy();
 
-    var node_buffer = Buffer.init(@sizeOf([2]f32) * node_count, .stream_draw);
-    try node_buffer.bindRange(.shader_storage_buffer, 0, 0, @intCast(i64, node_buffer.size));
-    try node_buffer.subData(0, node_buffer.size, common.toData(&nodes[0]));
-
-    try vertex_buffer.subData(0, @sizeOf(f32) * 2 * circle_vertex_data.len, common.toData(&circle_vertex_data));
-
-    var qt = QuadTree.init(common.a, 20, .{.x=0, .y=0}, .{.x=2*width,.y=2*height});
-    qt.config.point_radius = radius;
-    qt.build(nodes[0..]);
-    qt.build(nodes[0..]);
-    qt.build(nodes[0..]);
-    QuadTree.print(qt._quadtree_data);
-
-    my_VAO.bindVertexBuffer(vertex_buffer, 0, 0, 8);
-    my_VAO.setLayout(0, 2, 0, buffer.GLType.float);
-    const my_shader = try Shader.initFile("src/circle_shader.os");
-    defer my_shader.destroy();
+    var engine = Engine.init(common.a, .{});
 
     myCamera = Camera.init();
-    myCamera.setZoom(0.5);
 
     var show_demo_window: bool = false;
-    var draw_quadtree: bool = true;
+    var draw_quadtree: bool = false;
     while (!window.shouldClose()) {
 
         c.ImGui_ImplOpenGL3_NewFrame();
         c.ImGui_ImplGlfw_NewFrame();
         c.igNewFrame();
-        
+
         c.glClearColor(1.0, 1.0, 1.0, 1);
         c.glClear(c.GL_COLOR_BUFFER_BIT | c.GL_DEPTH_BUFFER_BIT);
-
-        if (draw_quadtree)
-            qt.draw(myCamera);
-
-        my_VAO.bind();
-        my_shader.bind();
-        my_shader.uniform(myCamera.getAssembled(), "u_assembled_matrix");
-        my_shader.uniform([3]f32{ 0.7, 0, 0 }, "u_color");
-        my_shader.uniform(radius, "u_radius");
-        VertexArray.drawArraysInstanced(.triangle_fan, 0, circle_vertex_data.len, nodes.len);
 
         _ = c.igBegin("Custom Window", 0, 0);
         _ = c.igCheckbox("Show Demo Window", &show_demo_window);
 
-        var text_size: c.ImVec2 = undefined;
-        c.igCalcTextSize(&text_size, "toggle imgui demo", null, true, 1000.0);
-        if (c.igButton("Print matrix", c.ImVec2{.x = text_size.x + 8, .y = text_size.y + 8})) {
+        if (draw_quadtree)
+            engine.doTick();
+
+        engine.draw(myCamera);
+        
+        if (common.imButton("Print matrix")) {
             v.printMatrix(myCamera.getAssembled());
         }
         _ = c.igCheckbox("Draw quadtree", &draw_quadtree);

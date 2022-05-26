@@ -7,6 +7,8 @@ layout(std430, binding=0) restrict buffer sphere_positions {
     vec2 pos[];
 } in_pos;
 
+out flat uint instance;
+
 uniform float u_radius;
 uniform mat3 u_assembled_matrix;
 
@@ -20,19 +22,21 @@ void main() {
         );
     gl_Position = vec4(u_assembled_matrix * model_matrix * vec3(in_Pos, 1), 1);
     gl_Position.z = 1;
+    instance = gl_InstanceID;
 
 }
 
-
 @fragment
 #version 450 core
+
+in flat uint instance;
 
 uniform vec3 u_color;
 out vec4 Color;
 
 void main() {
 
-    Color = vec4(u_color, 1);
+    Color = vec4(float(instance % 1000)/1000, float(instance % 100)/100, float(instance % 10)/10, 1);
 
 }
 
