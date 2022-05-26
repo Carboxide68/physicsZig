@@ -150,29 +150,34 @@ pub const VertexArray = struct {
 
     }
 
-    pub inline fn drawElements(mode: DrawMode, offset: u64, count: u64, index_type: GLType) void {
+    pub inline fn drawElements(self: VertexArray, mode: DrawMode, offset: u64, count: u64, index_type: GLType) void {
 
+        self.bind();
         c.glDrawElements(mode.u(), @bitCast(i64, count), index_type.u(), common.voidPtr(offset));
 
     }
 
-    pub inline fn drawElementsInstanced(mode: DrawMode, offset: u64, count: u64, instance_count: u32, index_type: GLType) void {
+    pub inline fn drawElementsInstanced(self: VertexArray, mode: DrawMode, offset: u64, count: u64, instance_count: u32, index_type: GLType) void {
+        self.bind();
         c.glDrawElementsInstanced(mode.u(), @bitCast(i64, count), index_type.u(), common.voidPtr(offset), instance_count);
     }
 
-    pub inline fn drawArrays(mode: DrawMode, offset: u32, count: u32) void {
+    pub inline fn drawArrays(self: VertexArray, mode: DrawMode, offset: u32, count: u32) void {
     
+        self.bind();
         c.glDrawArrays(mode.u(), @bitCast(i32, offset), @bitCast(i32, count));
 
     }
 
-    pub inline fn drawArraysInstanced(mode: DrawMode, offset: u32, count: u32, instance_count: u32) void {
+    pub inline fn drawArraysInstanced(self: VertexArray, mode: DrawMode, offset: u32, count: u32, instance_count: u32) void {
+        self.bind();
         c.glDrawArraysInstanced(mode.u(), @bitCast(i32, offset), @bitCast(i32, count), @bitCast(i32, instance_count));
     }
 
     
     pub fn bindVertexBuffer(self: VertexArray, buffer: Buffer, vb_index: u32, offset: u64, stride: u32) void {
     
+        self.bind();
         c.glVertexArrayVertexBuffer(self._handle, vb_index, buffer._buffer_handle, @bitCast(i64, offset), @bitCast(i32, stride));
 
     }

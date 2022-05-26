@@ -89,9 +89,9 @@ pub const Shader = struct {
             [2]f32      =>  c.glUniform2fv(loc, 1, &value),
             [3]f32      =>  c.glUniform3fv(loc, 1, &value),
             [4]f32      =>  c.glUniform4fv(loc, 1, &value),
-            Vec2        =>  c.glUniform2fv(loc, 1, value.data()),
-            Vec3        =>  c.glUniform3fv(loc, 1, value.data()),
-            Vec4        =>  c.glUniform4fv(loc, 1, value.data()),
+            Vec2        =>  c.glUniform2fv(loc, 1, value.dataC()),
+            Vec3        =>  c.glUniform3fv(loc, 1, value.dataC()),
+            Vec4        =>  c.glUniform4fv(loc, 1, value.dataC()),
 
             u32         =>  c.glUniform1uv(loc, 1, &value),
             i32         =>  c.glUniform1iv(loc, 1, &value),

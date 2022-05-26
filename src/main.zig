@@ -202,6 +202,26 @@ pub fn main() anyerror!void {
 
     myCamera = Camera.init();
 
+    const direction_data = [8]f32 {
+        0, 0,
+        1, 0,
+        0, 0,
+        0, 1,
+    };
+    var direction_pos = Vec2{.x=-0.9, .y=-0.9};
+    var dir_vao = VertexArray.init();
+    defer dir_vao.destroy();
+
+    var dir_buffer = Buffer.init(@sizeOf(f32) * direction_data.len, .static_draw);
+    defer dir_buffer.destroy();
+
+    try dir_buffer.subData(0, @sizeOf(f32) * direction_data.len, common.toData(&direction_data[0]));
+    dir_vao.bindVertexBuffer(dir_buffer, 0, 0, @sizeOf(f32) * 2);
+    dir_vao.setLayout(0, 2, 0, buffer.GLType.float);
+
+    const dir_shader = try Shader.initFile("src/dir_shader.os");
+    defer dir_shader.destroy();
+
     var show_demo_window: bool = false;
     var draw_quadtree: bool = false;
     while (!window.shouldClose()) {
@@ -220,10 +240,17 @@ pub fn main() anyerror!void {
             engine.doTick();
 
         engine.draw(myCamera);
-        
+
+        dir_shader.bind();
+        dir_shader.uniform(direction_pos, "u_position");
+        dir_shader.uniform(myCamera.getAssembled(), "u_camera_matrix");
+        dir_vao.drawArrays(.lines, 0, 4);
+
         if (common.imButton("Print matrix")) {
             v.printMatrix(myCamera.getAssembled());
         }
+        _ = c.igInputFloat2("Lines", &direction_pos.x, "%.3f", 0);
+
         _ = c.igCheckbox("Draw quadtree", &draw_quadtree);
 
         if (show_demo_window) {

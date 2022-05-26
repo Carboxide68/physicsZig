@@ -91,19 +91,16 @@ pub fn build(self: *QuadTree, points_in: []const [2]f32) void {
     if (self._indices.len != points_in.len) {
         if (self._indices.len > 0) self._a.free(self._indices);
         self._indices = self._a.alloc(usize, points_in.len*4) catch unreachable;
-        for (self._cells) |*point, i| {
-            const r = self.config.point_radius;
-            const offset = [2]f32{if (i & 1 == 0) -r else r, if (i & 2 == 0) r else -r};
-            const p = Vec2{.x=points_in[i>>2][0] + offset[0], .y=points_in[i>>2][1] + offset[1]};
-            point.* = Cell.calc(self.config, p);
-            self._indices[i] = i;
-        }
-    } else {
-        for (self._cells) |*point, i| {
-            const p = Vec2{.x=points_in[i][0], .y=points_in[i][1]};
-            point.* = Cell.calc(self.config, p);
-        }
     }
+
+    for (self._cells) |*point, i| {
+        const r = self.config.point_radius;
+        const offset = [2]f32{if (i & 1 == 0) -r else r, if (i & 2 == 0) r else -r};
+        const p = Vec2{.x=points_in[i>>2][0] + offset[0], .y=points_in[i>>2][1] + offset[1]};
+        point.* = Cell.calc(self.config, p);
+        self._indices[i] = i;
+    }
+
     Timings.gen_points = t_gen_points.end();
 
     //Sorting indices after point hash 
@@ -158,7 +155,7 @@ fn buildTreeBranch(config: Config, info: *Info, cells: []Cell, indices: []const 
         var cur_index = offset_index;
         for (indices) |i| {
 
-            cells[i].depth = @truncate(u6, begin_depth);
+            cells[i].depth = @truncate(u6, begin_depth-1);
             cells[i].hash = @truncate(u56, offset_index - 1);
             data[cur_index].point = Point{.reference=@truncate(u56, i>>2)};
 
@@ -328,11 +325,10 @@ pub fn draw(self: QuadTree, camera: Camera) void {
         -self.config.pos.x,    -self.config.pos.y,      1,
     }};
 
-    s.vao.bind();
     s.shader.bind();
     s.shader.uniform(camera.getAssembled(), "u_assembled_matrix");
     s.shader.uniform(model_matrix, "u_model_matrix");
-    VertexArray.drawArrays(.lines, 0, head*2);
+    s.vao.drawArrays(.lines, 0, head*2);
 }
 
 pub fn print(data: []Word) void {
@@ -419,12 +415,12 @@ const Cell = struct {
         var exp = @as(u56, 1) << 2*(Cell.MAX_DEPTH - 1);
         while (i < config.max_depth) : (i += 1) {
             const x_flag: u56 = if(xpos > 0) 1 else 0;
-            const y_flag: u56 = if(ypos > 0) 1 else 0;
+            const y_flag: u56 = if(ypos > 0) 0 else 1;
             cell.hash |= exp * (x_flag | y_flag << 1);
             exp = exp >> 2;
 
             xpos = (xpos*2) + (1 - 2.0*@intToFloat(f32, x_flag));
-            ypos = (ypos*2) + (1 - 2.0*@intToFloat(f32, y_flag));
+            ypos = (ypos*2) + (1 - 2.0*@intToFloat(f32, 1 - y_flag));
         }
 
         return cell;

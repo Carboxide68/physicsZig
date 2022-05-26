@@ -53,8 +53,8 @@ pub const Nodes = struct {
 
 pub const Config = struct {
 
-    node_count: usize = 10000,
-    node_radius: f32 = 0.002,
+    node_count: usize = 1000,
+    node_radius: f32 = 0.02,
 
     size: Vec2 = .{.x=1,.y=1},
     time_step: f32 = 0.0005,
@@ -92,6 +92,7 @@ pub fn init(a: std.mem.Allocator, config: Config) Engine {
     }
 
     engine.qt = QuadTree.init(a, 10, Vec2.init(0), config.size);
+    engine.qt.config.node_count_in_one = 6;
     engine.config = config;
 
     engine.box = .{
@@ -231,11 +232,10 @@ pub fn draw(self: Engine, camera: Camera) void {
     S.node_buffer.subData(0, @sizeOf(Vec2) * self.nodes.positions.len, common.toData(&self.nodes.positions[0])) catch unreachable;
     S.node_buffer.bindRange(.shader_storage_buffer, 0, 0, @intCast(i64, @sizeOf(Vec2) * self.nodes.positions.len)) catch unreachable;
 
-    S.vao.bind();
     S.circle_shader.bind();
     S.circle_shader.uniform(self.config.node_radius, "u_radius");
     S.circle_shader.uniform([3]f32{ 0.7, 0, 0 }, "u_color");
     S.circle_shader.uniform(camera.getAssembled(), "u_assembled_matrix");
-    VertexArray.drawArraysInstanced(.triangle_fan, 0, S.circle_vertex_data.len, @truncate(u32, self.nodes.positions.len));
+    S.vao.drawArraysInstanced(.triangle_fan, 0, S.circle_vertex_data.len, @truncate(u32, self.nodes.positions.len));
 }
 
