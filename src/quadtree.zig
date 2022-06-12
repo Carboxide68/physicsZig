@@ -401,6 +401,7 @@ const Cell = struct {
     depth: u8,
 
     pub fn calc(config: Config, pos: Vec2) Cell {
+        @setFloatMode(.Optimized);
         if (config.max_depth > MAX_DEPTH) return Cell{.hash=0, .depth=0};
         var xpos = (pos.x - config.pos.x)/config.size.x;
         var ypos = (pos.y - config.pos.y)/config.size.y;

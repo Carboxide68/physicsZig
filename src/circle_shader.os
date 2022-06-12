@@ -7,6 +7,7 @@ layout(std430, binding=0) restrict buffer sphere_positions {
     vec2 pos[];
 } in_pos;
 
+
 out flat uint instance;
 
 uniform float u_radius;
@@ -34,9 +35,16 @@ in flat uint instance;
 uniform vec3 u_color;
 out vec4 Color;
 
+layout(std430, binding=1) restrict readonly buffer sphere_colors {
+
+    vec4 colors[];
+
+} in_colors;
+
 void main() {
 
-    Color = vec4(float(instance % 1000)/1000, float(instance % 100)/100, float(instance % 10)/10, 1);
+    Color = in_colors.colors[instance];
+    //Color = vec4(float(instance % 1000)/1000, float(instance % 100)/100, float(instance % 10)/10, 1);
 
 }
 

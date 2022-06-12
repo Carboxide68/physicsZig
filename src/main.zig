@@ -199,6 +199,7 @@ pub fn main() anyerror!void {
     // defer my_shader.destroy();
 
     var engine = Engine.init(common.a, .{});
+    defer engine.destroy();
 
     myCamera = Camera.init();
 

@@ -8,6 +8,8 @@ const VertexArray = @import("buffer.zig").VertexArray;
 const Shader = @import("shader.zig").Shader;
 const Camera = @import("camera.zig");
 const Vec2 = v.Vec2;
+const Vec3 = v.Vec3;
+const Vec4 = v.Vec4;
 const Mat3 = v.Mat3;
 
 pub const Node = struct {
@@ -53,17 +55,18 @@ pub const Nodes = struct {
 
 pub const Config = struct {
 
-    node_count: usize = 10000,
+    node_count: usize = 20000,
     node_radius: f32 = 0.02,
 
-    size: Vec2 = .{.x=10,.y=10},
-    time_step: f32 = 0.005,
+    size: Vec2 = .{.x=40,.y=2.5},
+    time_step: f32 = 0.002,
 };
 
 const Engine = @This();
 
 _a: std.mem.Allocator,
 nodes: Nodes = .{},
+colors: []Vec4 = ([_]Vec4{})[0..0],
 qt: QuadTree = undefined,
 config: Config,
 box: [4][2]Vec2,
@@ -73,7 +76,7 @@ pub fn init(a: std.mem.Allocator, config: Config) Engine {
     var engine: Engine = undefined;
     engine._a = a;
     engine.nodes = Nodes.init(config.node_count, a);
-
+    engine.colors = engine._a.alloc(Vec4, config.node_count) catch ([_]Vec4{})[0..0];
 
     const seed = 9;
     var mesa = std.rand.DefaultPrng.init(seed);
@@ -86,9 +89,12 @@ pub fn init(a: std.mem.Allocator, config: Config) Engine {
         engine.nodes.masses[i] = 0.7 * prng.float(f32) + 0.3;
         pos.x = (b.x - r) * (prng.float(f32) * 2 - 1);
         pos.y = (b.y - r) * (prng.float(f32) * 2 - 1);
-        const angle = prng.float(f32) * 2 * std.math.pi;
-        const speed = prng.float(f32) * 4;
+        //const angle = prng.float(f32) * 2 * std.math.pi;
+        const angle: f32 = 0;
+        const speed = prng.float(f32) * 8;
         engine.nodes.velocities[i] = (Vec2{.x=@cos(angle), .y=@sin(angle)}).sMult(speed);
+        const b_w: f32 = if (pos.x/(b.x*2) < 0) 0 else 1;
+        engine.colors[i] = .{.x=b_w, .y=0, .z=1 - b_w, .w=0};
     }
 
     engine.qt = QuadTree.init(a, 10, Vec2.init(0), config.size);
@@ -103,6 +109,12 @@ pub fn init(a: std.mem.Allocator, config: Config) Engine {
         .{Vec2{.x=-b.x, .y=-b.y}, Vec2{.x=-b.x, .y= b.y}},
     };
     return engine;
+}
+
+pub fn destroy(self: *Engine) void {
+    self.qt.destroy();
+    self.nodes.destroy(self._a);
+    if (self.colors.len != 0) self._a.free(self.colors);
 }
 
 fn checkAndCollide(node1: Node, node2: Node, config: Config) bool {
@@ -123,14 +135,14 @@ fn checkAndCollide(node1: Node, node2: Node, config: Config) bool {
 }
 
 fn lineCollide(node: Node, line: [2]Vec2, config: Config) Vec2 {
-    const zero = Vec2{.x=0, .y=0};
-    const l_diff = line[1].sub(line[0]);
-    const between = node.pos.sub(line[0]);
+const zero = Vec2{.x=0, .y=0};
+const l_diff = line[1].sub(line[0]);
+const between = node.pos.sub(line[0]);
 
-    if (Vec2.dot(l_diff, between) < 0) return zero;
+if (Vec2.dot(l_diff, between) < 0) return zero;
 
-    const orth_line = Vec2{.x=-l_diff.y, .y=l_diff.x};
-    const normal_orth_line = orth_line.normalize();
+const orth_line = Vec2{.x=-l_diff.y, .y=l_diff.x};
+const normal_orth_line = orth_line.normalize();
 
     if (Vec2.dot(orth_line, orth_line) < Vec2.dot(between, between)) return zero;
     
@@ -254,9 +266,18 @@ pub fn draw(self: *Engine, camera: Camera) void {
     if (S.draw_quadtree)
         self.qt.draw(camera);
 
-    S.node_buffer.realloc(@sizeOf(Vec2) * self.nodes.positions.len, .stream_draw);
+    S.node_buffer.realloc(@sizeOf(Vec2) * self.nodes.positions.len + @sizeOf(Vec4) * self.colors.len, .stream_draw);
     S.node_buffer.subData(0, @sizeOf(Vec2) * self.nodes.positions.len, common.toData(&self.nodes.positions[0])) catch unreachable;
-    S.node_buffer.bindRange(.shader_storage_buffer, 0, 0, @intCast(i64, @sizeOf(Vec2) * self.nodes.positions.len)) catch unreachable;
+    S.node_buffer.subData(@sizeOf(Vec2) * self.nodes.positions.len, @sizeOf(Vec4) * self.colors.len, common.toData(&self.colors[0])) catch unreachable;
+    S.node_buffer.bindRange(
+        .shader_storage_buffer, 0, 0, 
+        @intCast(i64, @sizeOf(Vec2) * self.nodes.positions.len)
+        ) catch unreachable;
+    S.node_buffer.bindRange(
+        .shader_storage_buffer, 1, 
+        @intCast(i64, @sizeOf(Vec2) * self.nodes.positions.len), 
+        @intCast(i64, @sizeOf(Vec4) * self.colors.len), 
+        ) catch unreachable;
 
     S.circle_shader.bind();
     S.circle_shader.uniform(self.config.node_radius, "u_radius");
