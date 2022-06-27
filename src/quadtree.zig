@@ -1,8 +1,8 @@
 
 const std = @import("std");
 const common = @import("common.zig");
-const QuadTree = @This();
 const v = @import("vector.zig");
+const QuadTree = @This();
 const Vec2 = v.Vec2;
 const Mat3 = v.Mat3;
 
@@ -158,7 +158,7 @@ fn buildTreeBranch(config: Config, info: *Info, cells: []Cell, indices: []const 
 
             cells[i].depth = @truncate(u6, begin_depth);
             cells[i].hash = @truncate(u56, offset_index - 1);
-            data[cur_index].point = Point{.reference=@truncate(u56, i>>2)};
+            data[cur_index].point = Point{ .reference=@truncate(u56, i>>2) };
 
             cur_index += 1;
             info.points += 1;
