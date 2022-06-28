@@ -163,7 +163,7 @@ pub fn doTick(self: *Engine) void {
 
     self.qt.build(@ptrCast([*][2]f32, self.nodes.positions.ptr)[0..self.nodes.positions.len]);
 
-    const time = common.Timer(@src());
+    const time = common.timer(@src());
     defer _ = time.endPrint();
 
     const ts = self.config.time_step;

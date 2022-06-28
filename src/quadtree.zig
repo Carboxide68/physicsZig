@@ -77,7 +77,7 @@ fn lessThanIndexSort(context: []Cell, lhs: usize, rhs: usize) bool {
 }
 
 pub fn build(self: *QuadTree, points_in: []const [2]f32) void {
-    const t = common.Timer(@src());
+    const t = common.timer(@src());
     defer Timings.build = t.end();
 
     self.info = .{};
@@ -92,7 +92,7 @@ pub fn build(self: *QuadTree, points_in: []const [2]f32) void {
         self._indices = self._a.alloc(usize, points_in.len*4) catch unreachable;
     }
 
-    const t_gen_points = common.Timer(@src());
+    const t_gen_points = common.timer(@src());
     for (self._cells) |*point, i| {
         const r = self.config.point_radius;
         const offset = [2]f32{if (i & 1 == 0) -r else r, if (i & 2 == 0) r else -r};
@@ -104,7 +104,7 @@ pub fn build(self: *QuadTree, points_in: []const [2]f32) void {
     Timings.gen_points = t_gen_points.end();
 
     //Sorting indices after point hash 
-    const t_sort_points = common.Timer(@src());
+    const t_sort_points = common.timer(@src());
     std.sort.sort(usize, self._indices, self._cells, lessThanIndexSort);
     Timings.sort_points = t_sort_points.end();
 
@@ -112,7 +112,7 @@ pub fn build(self: *QuadTree, points_in: []const [2]f32) void {
     for (self._quadtree_data) |*s| s.int = 0;
 
     //Building tree
-    const t_build_quadtree = common.Timer(@src());
+    const t_build_quadtree = common.timer(@src());
     const length = buildTreeBranch(self.config, &self.info, self._cells, self._indices, self._quadtree_data, 0, 0);
     Timings.build_quadtree = t_build_quadtree.end();
     self._quadtree_data[length].int = 0;
@@ -122,7 +122,7 @@ pub fn build(self: *QuadTree, points_in: []const [2]f32) void {
     std.debug.print("QuadTree takes up {} bytes \n", .{8*length});
     
     //Extracting point locations
-    const t_second_sort = common.Timer(@src());
+    const t_second_sort = common.timer(@src());
     for (self.points) |*point, i| {
         point[0] = self._cells[i*4+0].hash;
         point[1] = self._cells[i*4+1].hash;
@@ -249,7 +249,7 @@ const VertexArray = @import("buffer.zig").VertexArray;
 const Shader = @import("shader.zig").Shader;
 const Camera = @import("camera.zig");
 pub fn draw(self: QuadTree, camera: Camera) void {
-    const t = common.Timer(@src());
+    const t = common.timer(@src());
     defer Timings.draw = t.end();
 
     const s = struct {
@@ -401,12 +401,14 @@ const Cell = struct {
     depth: u8,
 
     pub fn calc(config: Config, pos: Vec2) Cell {
+        const INT_MAX = std.math.maxInt(i64);
+        const HALF_INT_MAX = INT_MAX >> 1;
         @setFloatMode(.Optimized);
         if (config.max_depth > MAX_DEPTH) return Cell{.hash=0, .depth=0};
         var xpos = (pos.x - config.pos.x)/config.size.x;
         var ypos = (pos.y - config.pos.y)/config.size.y;
 
-        if (xpos > 1 or xpos < -1 or
+        if (xpos > 1 or xpos < -1 or    
             ypos > 1 or ypos < -1) {
             return Cell{.hash=0, .depth=0};
         }
@@ -415,14 +417,18 @@ const Cell = struct {
 
         var i: u56 = 0;
         var exp = @as(u56, 1) << 2*(Cell.MAX_DEPTH - 1);
+
+        var xval = @floatToInt(i64, INT_MAX * xpos);
+        var yval = @floatToInt(i64, INT_MAX * ypos);
+
         while (i < config.max_depth) : (i += 1) {
-            const x_flag: u56 = if(xpos > 0) 1 else 0;
-            const y_flag: u56 = if(ypos > 0) 0 else 1;
-            cell.hash |= exp * (x_flag | y_flag << 1);
+            const x_flag: i64 = if(xval > 0) 1 else 0;
+            const y_flag: i64 = if(yval > 0) 0 else 1;
+            cell.hash |= exp * @intCast(u56, x_flag | y_flag << 1);
             exp = exp >> 2;
 
-            xpos = (xpos*2) + (1 - 2.0*@intToFloat(f32, x_flag));
-            ypos = (ypos*2) + (1 - 2.0*@intToFloat(f32, 1 - y_flag));
+            xval = (xval + (HALF_INT_MAX - INT_MAX * x_flag)) << 1;
+            yval = (yval + (HALF_INT_MAX - INT_MAX * (1 - y_flag))) << 1;
         }
 
         return cell;

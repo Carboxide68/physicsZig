@@ -1,4 +1,5 @@
 const common = @import("common.zig");
+const renderer = @import("renderer.zig");
 const std = @import("std");
 const vector = @import("vector.zig");
 const glfw = @import("glfw");
@@ -24,7 +25,7 @@ pub fn getAssembled(self: Camera) Mat3 {
 }
 
 pub fn updateCameraMatrix(self: *Camera) void {
-    const window_size = common.window.getFramebufferSize() catch return;
+    const window_size = renderer.globals.window.getFramebufferSize() catch return;
     const width = @intToFloat(f32, window_size.width);
     const height = @intToFloat(f32, window_size.height);
     const bigger = @maximum(width, height);

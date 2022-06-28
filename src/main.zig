@@ -1,6 +1,9 @@
 const std = @import("std");
 const c = @import("c.zig");
 const glfw = @import("glfw");
+const renderer = @import("renderer.zig");
+const render_cam = &renderer.globals.camera;
+
 const common = @import("common.zig");
 const z_p = common.nullPtr;
 const buffer = @import("buffer.zig");
@@ -18,8 +21,6 @@ const glsl_version = "#version 130";
 
 var ig_context: *c.ImGuiContext = undefined;
 
-var myCamera: Camera = undefined;
-
 fn glfw_error_callback(error_code: glfw.Error, description: [:0]const u8) void {
     std.debug.print("GLFW error {}: {s}\n", .{error_code, description});
 }
@@ -31,7 +32,7 @@ fn framebuffer_callback(window: glfw.Window, width: u32, height: u32) void {
     const h = @intCast(i32, height);
     c.glViewport(0, 0, w, h);
 
-    myCamera.updateCameraMatrix();
+    render_cam.updateCameraMatrix();
 }
 
 fn opengl_error_callback(source: c.GLenum, error_type: c.GLenum,
@@ -50,7 +51,7 @@ fn glfw_scroll_callback(window: glfw.Window, x: f64, y: f64) void {
     _ = window;
     _ = y;
     _ = x;
-    myCamera.zoom(@floatCast(f32, std.math.pow(f64, 1.2, y)));
+    render_cam.zoom(@floatCast(f32, std.math.pow(f64, 1.2, y)));
 }
 
 var should_pan = false;
@@ -74,12 +75,12 @@ fn glfw_mouse_callback(window: glfw.Window, x: f64, y: f64) void {
         const x_p: f32 = -2 * x_diff/fwidth;
         const y_p: f32 = 2 * y_diff/fheight;
 
-        const matrix = myCamera.getAssembled();
+        const matrix = render_cam.getAssembled();
         const cam_x = Vec2.gen(matrix.data[0], matrix.data[1]);
         const cam_y = Vec2.gen(matrix.data[3], matrix.data[4]);
         const move_x = cam_x.sMult(x_p/cam_x.length());
         const move_y = cam_y.sMult(y_p/cam_y.length());
-        myCamera.move(move_x.x + move_y.x, move_x.y + move_y.y);
+        render_cam.move(move_x.x + move_y.x, move_x.y + move_y.y);
     }
 }
 
@@ -165,7 +166,7 @@ fn glDeinit(window: *glfw.Window) void {
 
 pub fn main() anyerror!void {
 
-    var window = &common.window;
+    var window = &renderer.globals.window;
 
     try glInit(window);
     defer glDeinit(window);
@@ -201,7 +202,7 @@ pub fn main() anyerror!void {
     var engine = Engine.init(common.a, .{});
     defer engine.destroy();
 
-    myCamera = Camera.init();
+    render_cam.updateCameraMatrix();
 
     const direction_data = [8]f32 {
         0, 0,
@@ -246,15 +247,15 @@ pub fn main() anyerror!void {
             }
         }
 
-        engine.draw(myCamera);
+        engine.draw(render_cam.*);
 
         dir_shader.bind();
         dir_shader.uniform(direction_pos, "u_position");
-        dir_shader.uniform(myCamera.getAssembled(), "u_camera_matrix");
+        dir_shader.uniform(render_cam.getAssembled(), "u_camera_matrix");
         dir_vao.drawArrays(.lines, 0, 4);
 
         if (common.imButton("Print matrix")) {
-            v.printMatrix(myCamera.getAssembled());
+            v.printMatrix(render_cam.getAssembled());
         }
         _ = c.igInputFloat2("Lines", &direction_pos.x, "%.3f", 0);
         _ = c.igSliderInt("Ticks per frame", &tick_per_frame, 1, 100, "%d", 0);

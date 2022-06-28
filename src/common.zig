@@ -3,10 +3,8 @@ const c = @import("c.zig");
 
 const heap = std.heap;
 
-
 pub var general_allocator: heap.GeneralPurposeAllocator(.{}) = .{};
 pub var a: std.mem.Allocator = general_allocator.allocator();
-pub var window: @import("glfw").Window = undefined;
 
 pub fn nullPtr(comptime T: type) *allowzero T {
 
@@ -39,7 +37,7 @@ pub const Time = struct {
     }
 };
 
-pub fn Timer(src: std.builtin.SourceLocation) Time {
+pub fn timer(src: std.builtin.SourceLocation) Time {
     return Time{.src=src, .now = std.time.nanoTimestamp()};
 }
 
