@@ -3,6 +3,7 @@ const c = @import("c.zig");
 const glfw = @import("glfw");
 const renderer = @import("renderer.zig");
 const render_cam = &renderer.globals.camera;
+const HashSort = @import("hash_and_sort.zig");
 
 const common = @import("common.zig");
 const z_p = common.nullPtr;
@@ -22,7 +23,7 @@ const glsl_version = "#version 130";
 var ig_context: *c.ImGuiContext = undefined;
 
 fn glfw_error_callback(error_code: glfw.Error, description: [:0]const u8) void {
-    std.debug.print("GLFW error {}: {s}\n", .{error_code, description});
+    std.debug.print("GLFW error {}: {s}\n", .{ error_code, description });
 }
 
 fn framebuffer_callback(window: glfw.Window, width: u32, height: u32) void {
@@ -35,9 +36,7 @@ fn framebuffer_callback(window: glfw.Window, width: u32, height: u32) void {
     render_cam.updateCameraMatrix();
 }
 
-fn opengl_error_callback(source: c.GLenum, error_type: c.GLenum,
-                        id: c.GLuint, severity: c.GLenum,
-                        length: c.GLsizei, message: [*c]const u8, _: ?*const anyopaque) callconv(.C) void {
+fn opengl_error_callback(source: c.GLenum, error_type: c.GLenum, id: c.GLuint, severity: c.GLenum, length: c.GLsizei, message: [*c]const u8, _: ?*const anyopaque) callconv(.C) void {
     const m = message[0..@intCast(usize, length)];
     _ = id;
     _ = source;
@@ -72,14 +71,14 @@ fn glfw_mouse_callback(window: glfw.Window, x: f64, y: f64) void {
         const window_size = window.getSize() catch return;
         const fwidth = @intToFloat(f32, window_size.width);
         const fheight = @intToFloat(f32, window_size.height);
-        const x_p: f32 = -2 * x_diff/fwidth;
-        const y_p: f32 = 2 * y_diff/fheight;
+        const x_p: f32 = -2 * x_diff / fwidth;
+        const y_p: f32 = 2 * y_diff / fheight;
 
         const matrix = render_cam.getAssembled();
         const cam_x = Vec2.gen(matrix.data[0], matrix.data[1]);
         const cam_y = Vec2.gen(matrix.data[3], matrix.data[4]);
-        const move_x = cam_x.sMult(x_p/cam_x.length());
-        const move_y = cam_y.sMult(y_p/cam_y.length());
+        const move_x = cam_x.sMult(x_p / cam_x.length());
+        const move_y = cam_y.sMult(y_p / cam_y.length());
         render_cam.move(move_x.x + move_y.x, move_x.y + move_y.y);
     }
 }
@@ -98,7 +97,6 @@ fn glfw_mouse_button_callback(window: glfw.Window, button: glfw.MouseButton, act
     _ = action;
     _ = mods;
     switch (button) {
-
         .left => {
             if (action == .press) {
                 should_pan = true;
@@ -145,14 +143,13 @@ fn glInit(window: *glfw.Window) !void {
 
     ig_context = c.igCreateContext(null);
     if (!c.ImGui_ImplGlfw_InitForOpenGL(@ptrCast(*c.GLFWwindow, window.handle), true)) {
-         std.debug.panic("", .{});
+        std.debug.panic("", .{});
     }
 
     if (!c.ImGui_ImplOpenGL3_Init(glsl_version)) {
-         std.debug.panic("Could not init opengl", .{});
-         return error.InvalidValue;
+        std.debug.panic("Could not init opengl", .{});
+        return error.InvalidValue;
     }
-
 }
 
 fn glDeinit(window: *glfw.Window) void {
@@ -165,7 +162,6 @@ fn glDeinit(window: *glfw.Window) void {
 }
 
 pub fn main() anyerror!void {
-
     var window = &renderer.globals.window;
 
     try glInit(window);
@@ -173,44 +169,18 @@ pub fn main() anyerror!void {
 
     c.glClearColor(0.3, 0.3, 0, 1);
 
-    // const seed = 9;
-    // var prng = std.rand.DefaultPrng.init(seed);
-    // const rand = prng.random();
-    // const node_count: usize = 100;
-    // const width: f32 = 5;
-    // const height: f32 = 5;
-    // var nodes: [node_count][2]f32 = undefined;
-    // for (nodes) |*node| {
-    //     node[0] = (rand.float(f32) * 2 - 1) * width;
-    //     node[1] = (rand.float(f32) * 2 - 1) * height;
-    // }
-
-    // const radius: f32 = 0.01;
-
-    // var qt = QuadTree.init(common.a, 20, .{.x=0, .y=0}, .{.x=2*width,.y=2*height});
-    // qt.config.point_radius = radius;
-    // qt.build(nodes[0..]);
-    // qt.build(nodes[0..]);
-    // qt.build(nodes[0..]);
-    // QuadTree.print(qt._quadtree_data);
-
-    // my_VAO.bindVertexBuffer(vertex_buffer, 0, 0, 8);
-    // my_VAO.setLayout(0, 2, 0, buffer.GLType.float);
-    // const my_shader = try Shader.initFile("src/circle_shader.os");
-    // defer my_shader.destroy();
-
     var engine = Engine.init(common.a, .{});
     defer engine.destroy();
 
     render_cam.updateCameraMatrix();
 
-    const direction_data = [8]f32 {
+    const direction_data = [8]f32{
         0, 0,
         1, 0,
         0, 0,
         0, 1,
     };
-    var direction_pos = Vec2{.x=-0.9, .y=-0.9};
+    var direction_pos = Vec2{ .x = -0.9, .y = -0.9 };
     var dir_vao = VertexArray.init();
     defer dir_vao.destroy();
 
@@ -227,9 +197,10 @@ pub fn main() anyerror!void {
     var show_demo_window: bool = false;
     var draw_quadtree: bool = false;
     var tick_per_frame: i32 = 1;
+    engine.doTick();
+
 
     while (!window.shouldClose()) {
-
         c.ImGui_ImplOpenGL3_NewFrame();
         c.ImGui_ImplGlfw_NewFrame();
         c.igNewFrame();
@@ -253,15 +224,14 @@ pub fn main() anyerror!void {
         dir_shader.uniform(direction_pos, "u_position");
         dir_shader.uniform(render_cam.getAssembled(), "u_camera_matrix");
         dir_vao.drawArrays(.lines, 0, 4);
-
-        if (common.imButton("Print matrix")) {
-            v.printMatrix(render_cam.getAssembled());
-        }
+        
         _ = c.igInputFloat2("Lines", &direction_pos.x, "%.3f", 0);
         _ = c.igSliderInt("Ticks per frame", &tick_per_frame, 1, 100, "%d", 0);
         _ = c.igSliderInt("Nodes In One", @ptrCast([*c]c_int, &engine.qt.config.node_count_in_one), 1, 18, "%d", 0);
 
-        _ = c.igCheckbox("Draw quadtree", &draw_quadtree);
+        if (common.imButton("Draw quadtree")) {
+            engine.doTick();
+        }
 
         if (show_demo_window) {
             c.igShowDemoWindow(&show_demo_window);

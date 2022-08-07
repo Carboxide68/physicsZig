@@ -89,12 +89,12 @@ pub const Shader = struct {
             [2]f32      =>  c.glUniform2fv(loc, 1, &value),
             [3]f32      =>  c.glUniform3fv(loc, 1, &value),
             [4]f32      =>  c.glUniform4fv(loc, 1, &value),
-            Vec2        =>  c.glUniform2fv(loc, 1, value.dataC()),
-            Vec3        =>  c.glUniform3fv(loc, 1, value.dataC()),
-            Vec4        =>  c.glUniform4fv(loc, 1, value.dataC()),
+            Vec2        =>  c.glUniform2fv(loc, 1, &value.dataC()),
+            Vec3        =>  c.glUniform3fv(loc, 1, &value.dataC()),
+            Vec4        =>  c.glUniform4fv(loc, 1, &value.dataC()),
 
-            u32         =>  c.glUniform1uv(loc, 1, &value),
-            i32         =>  c.glUniform1iv(loc, 1, &value),
+            u32         =>  c.glUniform1ui(loc, value),
+            i32         =>  c.glUniform1i(loc, value),
 
             Mat2T(f32)  =>  c.glUniformMatrix2fv(loc, 1, c.GL_FALSE, &value.data),
             Mat3T(f32)  =>  c.glUniformMatrix3fv(loc, 1, c.GL_FALSE, &value.data),
@@ -154,7 +154,7 @@ pub const Shader = struct {
         const dir = std.fs.cwd();
         var shader_file: File = undefined;
 
-        if (dir.openFile(file_path, .{.read=true, .write=false})) |F| {
+        if (dir.openFile(file_path, .{.mode=.read_only})) |F| {
             shader_file = F;
         } else |err| {
             std.debug.print("Failed to read file {s}!\n", .{file_path});

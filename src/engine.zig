@@ -55,7 +55,7 @@ pub const Nodes = struct {
 
 pub const Config = struct {
 
-    node_count: usize = 20000,
+    node_count: usize = 100000,
     node_radius: f32 = 0.02,
 
     size: Vec2 = .{.x=40,.y=2.5},
@@ -70,6 +70,8 @@ colors: []Vec4 = ([_]Vec4{})[0..0],
 qt: QuadTree = undefined,
 config: Config,
 box: [4][2]Vec2,
+
+tick_timing: i128 = 0,
 
 pub fn init(a: std.mem.Allocator, config: Config) Engine {
 
@@ -101,6 +103,7 @@ pub fn init(a: std.mem.Allocator, config: Config) Engine {
     engine.qt.config.node_count_in_one = 6;
     engine.qt.config.point_radius = config.node_radius;
     engine.config = config;
+    engine.tick_timing = 0;
 
     engine.box = .{
         .{Vec2{.x=-b.x, .y= b.y}, Vec2{.x= b.x, .y= b.y}},
@@ -147,7 +150,7 @@ const normal_orth_line = orth_line.normalize();
     if (Vec2.dot(orth_line, orth_line) < Vec2.dot(between, between)) return zero;
     
     const len_between = Vec2.dot(normal_orth_line, between);
-    if (std.math.absFloat(len_between) > config.node_radius) return zero;
+    if (std.math.fabs(len_between) > config.node_radius) return zero;
     const to_line = normal_orth_line.sMult(Vec2.dot(normal_orth_line, node.vel.*));
     return to_line.sMult(-2.0);
 }
@@ -164,7 +167,7 @@ pub fn doTick(self: *Engine) void {
     self.qt.build(@ptrCast([*][2]f32, self.nodes.positions.ptr)[0..self.nodes.positions.len]);
 
     const time = common.timer(@src());
-    defer _ = time.endPrint();
+    defer self.tick_timing = time.end();
 
     const ts = self.config.time_step;
     for (self.qt.points) |point, i| {
@@ -248,6 +251,8 @@ pub fn draw(self: *Engine, camera: Camera) void {
     _ = c.igBegin("Engine", 0, 0);
     _ = c.igText("Node count: %d", self.config.node_count);
     _ = c.igText("Node radius: %f", self.config.node_radius);
+    const tick_timing = @truncate(i64, @divFloor(self.tick_timing, 1000));
+    _ = c.igText("DoTick: %lldus", tick_timing);
     if (common.imButton("Print Quadtree")) {
         QuadTree.print(self.qt._quadtree_data);
     }
@@ -271,12 +276,12 @@ pub fn draw(self: *Engine, camera: Camera) void {
     S.node_buffer.subData(@sizeOf(Vec2) * self.nodes.positions.len, @sizeOf(Vec4) * self.colors.len, common.toData(&self.colors[0])) catch unreachable;
     S.node_buffer.bindRange(
         .shader_storage_buffer, 0, 0, 
-        @intCast(i64, @sizeOf(Vec2) * self.nodes.positions.len)
+        @sizeOf(Vec2) * self.nodes.positions.len
         ) catch unreachable;
     S.node_buffer.bindRange(
         .shader_storage_buffer, 1, 
-        @intCast(i64, @sizeOf(Vec2) * self.nodes.positions.len), 
-        @intCast(i64, @sizeOf(Vec4) * self.colors.len), 
+        @sizeOf(Vec2) * self.nodes.positions.len, 
+        @sizeOf(Vec4) * self.colors.len, 
         ) catch unreachable;
 
     S.circle_shader.bind();

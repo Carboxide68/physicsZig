@@ -14,7 +14,7 @@ pub fn nullPtr(comptime T: type) *allowzero T {
 
 //Potentially might leak data if input variable is not a 64 bit type
 pub fn voidPtr(input: anytype) *allowzero anyopaque {
-    return @bitCast(*allowzero anyopaque, input);
+    return @ptrCast(*allowzero anyopaque, input);
 }
 
 pub fn toData(data: anytype) [*]const u8 {

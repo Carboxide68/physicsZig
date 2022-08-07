@@ -35,7 +35,7 @@ inline fn multScalar(comptime L: comptime_int, comptime T: type, lhs: *[L]T, sca
 }
 
 pub fn Vec2T(comptime T: type) type {
-    return packed struct {
+    return extern struct {
         const _len = 2;
         const This = @This();
 
@@ -51,7 +51,7 @@ pub fn Vec2T(comptime T: type) type {
         }
 
         pub fn dot(lhs: This, rhs: This) T {
-            return dotProductGeneral(_len, T, lhs.dataC().*, rhs.dataC().*);
+            return dotProductGeneral(_len, T, lhs.dataC(), rhs.dataC());
         }
 
         pub fn add(lhs: This, rhs: This) This {
@@ -98,14 +98,14 @@ pub fn Vec2T(comptime T: type) type {
             return @ptrCast(*[_len]T, self);
         }
 
-        pub fn dataC(self: *const This) *const [_len]T {
-            return @ptrCast(*const [_len]T, self);
+        pub fn dataC(self: This) [_len]T {
+            return @bitCast([_len]T, self);
         }
     };
 }
 
 pub fn Vec3T(comptime T: type) type {
-    return packed struct {
+    return extern struct {
         const _len = 3;
         const This = @This();
 
@@ -122,7 +122,7 @@ pub fn Vec3T(comptime T: type) type {
         }
 
         pub fn dot(lhs: This, rhs: This) T {
-            return dotProductGeneral(_len, T, lhs.dataC().*, rhs.dataC().*);
+            return dotProductGeneral(_len, T, lhs.dataC(), rhs.dataC());
         }
 
         pub fn add(lhs: This, rhs: This) This {
@@ -180,7 +180,7 @@ pub fn Vec3T(comptime T: type) type {
 
 }
 pub fn Vec4T(comptime T: type) type {
-    return packed struct {
+    return extern struct {
         const _len = 4;
         const This = @This();
 
@@ -198,7 +198,7 @@ pub fn Vec4T(comptime T: type) type {
         }
 
         pub fn dot(lhs: This, rhs: This) T {
-            return dotProductGeneral(_len, T, lhs.dataC().*, rhs.dataC().*);
+            return dotProductGeneral(_len, T, lhs.dataC(), rhs.dataC());
         }
 
         pub fn add(lhs: This, rhs: This) This {
@@ -260,7 +260,7 @@ pub fn Vec4T(comptime T: type) type {
 }
 
 pub fn Mat2T(comptime T: type) type {
-    return packed struct {
+    return extern struct {
         const _len = 4;
         const _row = math.sqrt(_len);
         const This = @This();
@@ -316,7 +316,7 @@ pub fn Mat2T(comptime T: type) type {
 }
 
 pub fn Mat3T(comptime T: type) type {
-    return struct {
+    return extern struct {
         const _len = 9;
         const _row = math.sqrt(_len);
         const This = @This();
@@ -374,7 +374,7 @@ pub fn Mat3T(comptime T: type) type {
 }
 
 pub fn Mat4T(comptime T: type) type {
-    return struct {
+    return extern struct {
         const _len = 16;
         const _row = math.sqrt(_len);
         const This = @This();

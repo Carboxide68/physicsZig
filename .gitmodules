@@ -3,5 +3,4 @@
 	url = https://github.com/cimgui/cimgui.git
 [submodule "deps/mach-glfw"]
 	path = deps/mach-glfw
-	url = https://github.com/Carboxide68/mach-glfw.git
-	branch = corrections
+	url = https://github.com/hexops/mach-glfw.git

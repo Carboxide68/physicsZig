@@ -84,51 +84,81 @@ pub const Buffer = struct {
 
     _buffer_handle: u32 = 0,
     size: u64,
+    usage: BufferUsage,
 
     pub fn init(size: u64, usage: BufferUsage) Buffer {
-    
         var handle: u32 = undefined;
         c.glCreateBuffers(1, &handle);
         if (size != 0)
             c.glNamedBufferData(handle, @bitCast(i64, size), common.nullPtr(anyopaque), usage.u());
-        return Buffer{._buffer_handle=handle, .size=size};
+        return Buffer{._buffer_handle=handle, .size=size, .usage=usage};
     }
 
     pub fn destroy(self: *Buffer) void {
-    
         c.glDeleteBuffers(1, &self._buffer_handle);
         self._buffer_handle = 0;
-
     }
 
     pub fn realloc(self: *Buffer, size: u64, usage: BufferUsage) void {
-        if (size <= self.size) return;
+        if (size <= self.size and usage == self.usage) return;
         c.glNamedBufferData(self._buffer_handle, @intCast(i64, size), common.nullPtr(anyopaque), usage.u());
         self.size = size;
+        self.usage = usage;
     }
 
     pub fn subData(self: Buffer, offset: u64, size: u64, data: [*]const u8) !void {
-    
         if (offset + size > self.size) return error.InvalidAccess;
         c.glNamedBufferSubData(self._buffer_handle, @bitCast(i64, offset), @bitCast(i64, size), @ptrCast(*const anyopaque, data));
-
     }
 
-    pub fn bindRange(self: Buffer, target: BufferTarget, index: u32, offset: isize, size: isize) !void {
+    pub fn read(self: Buffer, offset: usize, size: usize, out: [*]u8) !void {
         if (@intCast(u64, offset) + @intCast(u64, size) > self.size) return error.InvalidAccess;
-        c.glBindBufferRange(target.u(), 
-            index, 
-            self._buffer_handle, 
-            offset, 
-            size);
+        c.glGetNamedBufferSubData(
+            self._buffer_handle, @intCast(c_longlong, offset),
+            @intCast(isize, size), common.voidPtr(out));
+    }
+
+    pub fn bindRange(self: Buffer, target: BufferTarget, index: usize, offset: usize, size: usize) !void {
+        if (@intCast(u64, offset) + @intCast(u64, size) > self.size) return error.InvalidAccess;
+        c.glBindBufferRange(target.u(),
+            @intCast(u32, index),
+            self._buffer_handle,
+            @intCast(isize, offset),
+            @intCast(isize, size));
+    }
+
+    pub fn range(self: *Buffer, start: usize, size: usize) !BufferDescriptor {
+        if (@intCast(u64, start) + @intCast(u64, size) > self.size) return error.InvalidAccess;
+        return BufferDescriptor{.buffer=self, .start=start, .size=size};
+    }
+
+    pub fn clear(self: *Buffer, offset: usize, size: usize) !void {
+        if (@intCast(u64, offset) + @intCast(u64, size) > self.size) return error.InvalidAccess;
+        c.glClearNamedBufferSubData(
+            self._buffer_handle, c.GL_RGBA8, @intCast(c_longlong, offset),
+            @intCast(isize, size), c.GL_RGBA, c.GL_UNSIGNED_BYTE, common.nullPtr(anyopaque));
     }
 };
 
+pub const BufferDescriptor = struct {
+    buffer: *Buffer,
+    start: usize,
+    size: usize,
+
+    pub fn bind(self: BufferDescriptor, index: usize, target: BufferTarget) void {
+        self.buffer.bindRange(target, index, self.start, self.size) catch {};
+    }
+
+    pub fn read(self: BufferDescriptor, buffer: [*]u8) void {
+        self.buffer.read(self.start, self.size, buffer);
+    }
+
+};
 
 pub const VertexArray = struct {
 
     _handle: u32,
-    
+
     pub fn init() VertexArray {
 
         var handle: u32 = undefined;
@@ -138,7 +168,7 @@ pub const VertexArray = struct {
     }
 
     pub fn destroy(self: *VertexArray) void {
-    
+
         c.glDeleteVertexArrays(1, &self._handle);
         self._handle = 0;
 
@@ -163,7 +193,7 @@ pub const VertexArray = struct {
     }
 
     pub inline fn drawArrays(self: VertexArray, mode: DrawMode, offset: u32, count: u32) void {
-    
+
         self.bind();
         c.glDrawArrays(mode.u(), @bitCast(i32, offset), @bitCast(i32, count));
 
@@ -174,22 +204,22 @@ pub const VertexArray = struct {
         c.glDrawArraysInstanced(mode.u(), @bitCast(i32, offset), @bitCast(i32, count), @bitCast(i32, instance_count));
     }
 
-    
+
     pub fn bindVertexBuffer(self: VertexArray, buffer: Buffer, vb_index: u32, offset: u64, stride: u32) void {
-    
+
         self.bind();
         c.glVertexArrayVertexBuffer(self._handle, vb_index, buffer._buffer_handle, @bitCast(i64, offset), @bitCast(i32, stride));
 
     }
 
     pub fn bindIndexBuffer(self: VertexArray, buffer: Buffer) void {
-    
+
         c.glVertexArrayElementBuffer(self._handle, buffer._buffer_handle);
 
     }
 
     pub fn setLayout(self: VertexArray, attr_index: u32, count: u32, vertex_offset: u32, t: GLType) void {
-    
+
         c.glEnableVertexArrayAttrib(self._handle, attr_index);
 
         c.glVertexArrayAttribFormat(self._handle, attr_index, @bitCast(i32, count), t.u(), c.GL_FALSE, vertex_offset);

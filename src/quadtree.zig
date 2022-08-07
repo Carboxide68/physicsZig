@@ -2,11 +2,12 @@
 const std = @import("std");
 const common = @import("common.zig");
 const v = @import("vector.zig");
-const QuadTree = @This();
+const HashSort = @import("hash_and_sort.zig");
 const Vec2 = v.Vec2;
 const Mat3 = v.Mat3;
-
 const Allocator = std.mem.Allocator;
+
+const QuadTree = @This();
 
 //Quadtree. The struct first contains a list with all the points it contains.
 //Each point also contians a reference to up to 4 cells.
@@ -47,7 +48,8 @@ points: [][4]usize = ([_][4]usize{})[0..0],
 _a: Allocator,
 _cells: []Cell = ([_]Cell{})[0..0],
 _quadtree_data: []Word = ([_]Word{})[0..0],
-_indices: []usize = ([_]usize{})[0..0],
+_indices: []u32 = ([_]u32{})[0..0],
+_hs: HashSort = undefined,
 
 pub fn init(a: Allocator, max_depth: u32, position: Vec2, size: Vec2) QuadTree {
     return .{
@@ -57,6 +59,7 @@ pub fn init(a: Allocator, max_depth: u32, position: Vec2, size: Vec2) QuadTree {
             .size = size,
         },
         ._a = a,
+        ._hs = HashSort.init(),
     };
 }
 
@@ -65,6 +68,7 @@ pub fn destroy(self: *QuadTree) void {
     if (self._indices.len > 0) self._a.free(self._indices);
     if (self._cells.len > 0) self._a.free(self._cells);
     if (self.points.len > 0) self._a.free(self.points);
+    self._hs.destroy();
 }
 
 fn lessThanIndexSort(context: []Cell, lhs: usize, rhs: usize) bool {
@@ -79,34 +83,30 @@ fn lessThanIndexSort(context: []Cell, lhs: usize, rhs: usize) bool {
 pub fn build(self: *QuadTree, points_in: []const [2]f32) void {
     const t = common.timer(@src());
     defer Timings.build = t.end();
+    const hash_and_sort_timer = common.timer(@src());
 
-    self.info = .{};
-    self._cells = self._a.realloc(self._cells, points_in.len*4) catch self._cells;
-    if (self._cells.len == 0) {
-        std.debug.print("Failed to allocate points!\n", .{});
-        return;
-    }
-
-    if (self._indices.len != points_in.len) {
-        if (self._indices.len > 0) self._a.free(self._indices);
-        self._indices = self._a.alloc(usize, points_in.len*4) catch unreachable;
-    }
-
-    const t_gen_points = common.timer(@src());
-    for (self._cells) |*point, i| {
+    var points = self._a.alloc([2]f32, points_in.len * 4) catch unreachable;
+    defer self._a.free(points);
+    for (points) |*p, i| {
         const r = self.config.point_radius;
         const offset = [2]f32{if (i & 1 == 0) -r else r, if (i & 2 == 0) r else -r};
-        const p = Vec2{.x=points_in[i>>2][0] + offset[0], .y=points_in[i>>2][1] + offset[1]};
-        point.* = Cell.calc(self.config, p);
-        self._indices[i] = i;
+        p.* = [2]f32{points_in[i>>2][0] + offset[0], points_in[i>>2][1] + offset[1]};
     }
 
-    Timings.gen_points = t_gen_points.end();
+    self._hs.hashAndSort(points, self.config);
+    var hashes: []u64 = undefined;
+    if (self._indices.len > 0) self._a.free(self._indices);
+    self._hs.updateCpuSize(self._a, &self._indices, &hashes);
+    defer self._a.free(hashes);
 
-    //Sorting indices after point hash 
-    const t_sort_points = common.timer(@src());
-    std.sort.sort(usize, self._indices, self._cells, lessThanIndexSort);
-    Timings.sort_points = t_sort_points.end();
+    self.info = .{};
+    self._cells = self._a.realloc(self._cells, hashes.len) catch unreachable;
+    for (self._cells) |*cell, i| {
+        cell.hash = @truncate(u56, hashes[i] >> 8 );
+        cell.depth = @truncate(u8, self.config.max_depth);
+    }
+
+    Timings.gen_points = hash_and_sort_timer.end();
 
     self._quadtree_data = self._a.realloc(self._quadtree_data, self.config.max_depth * self._indices.len) catch self._quadtree_data;
     for (self._quadtree_data) |*s| s.int = 0;
@@ -150,7 +150,7 @@ pub fn build(self: *QuadTree, points_in: []const [2]f32) void {
 }
 
 //Takes a layer and does all the necessary operations for it 
-fn buildTreeBranch(config: Config, info: *Info, cells: []Cell, indices: []const usize,
+fn buildTreeBranch(config: Config, info: *Info, cells: []Cell, indices: []const u32,
                      data: []Word, begin_depth: u6, offset_index: usize) usize {
     if (begin_depth >= config.max_depth) {
         var cur_index = offset_index;
@@ -158,7 +158,7 @@ fn buildTreeBranch(config: Config, info: *Info, cells: []Cell, indices: []const 
 
             cells[i].depth = @truncate(u6, begin_depth);
             cells[i].hash = @truncate(u56, offset_index - 1);
-            data[cur_index].point = Point{ .reference=@truncate(u56, i>>2) };
+            data[cur_index].point = Point{ .reference = i>>2 };
 
             cur_index += 1;
             info.points += 1;
@@ -211,7 +211,7 @@ fn buildTreeBranch(config: Config, info: *Info, cells: []Cell, indices: []const 
 
                 cells[i].depth = @truncate(u6, begin_depth+1);
                 cells[i].hash = @truncate(u56, qtl_index);
-                data[cur_index].point = .{.reference=@truncate(u56, i>>2)};
+                data[cur_index].point = .{.reference= i>>2};
                 cur_index += 1;
             }
 
@@ -393,7 +393,7 @@ const Point = packed struct {
     code: Codes = .Point,
 };
 
-const Cell = struct {
+pub const Cell = struct {
     const _size = @sizeOf(@This());
     const MAX_DEPTH = 28;
 
@@ -401,9 +401,9 @@ const Cell = struct {
     depth: u8,
 
     pub fn calc(config: Config, pos: Vec2) Cell {
+        @setFloatMode(.Optimized);
         const INT_MAX = std.math.maxInt(i64);
         const HALF_INT_MAX = INT_MAX >> 1;
-        @setFloatMode(.Optimized);
         if (config.max_depth > MAX_DEPTH) return Cell{.hash=0, .depth=0};
         var xpos = (pos.x - config.pos.x)/config.size.x;
         var ypos = (pos.y - config.pos.y)/config.size.y;
@@ -427,10 +427,9 @@ const Cell = struct {
             cell.hash |= exp * @intCast(u56, x_flag | y_flag << 1);
             exp = exp >> 2;
 
-            xval = (xval + (HALF_INT_MAX - INT_MAX * x_flag)) << 1;
+            xval = (xval + (HALF_INT_MAX - INT_MAX * x_flag)) << 1; //Either +0.5 or -0.5 away from 0
             yval = (yval + (HALF_INT_MAX - INT_MAX * (1 - y_flag))) << 1;
         }
-
         return cell;
     }
 
@@ -459,90 +458,61 @@ const Cell = struct {
 };
 
 test "Hash Test" {
+    const old_hash = struct {
+        pub fn old_hash(config: Config, pos: Vec2) Cell {
+            @setFloatMode(.Optimized);
+            var xpos = (pos.x - config.pos.x)/config.size.x;
+            var ypos = (pos.y - config.pos.y)/config.size.y;
+
+            if (xpos > 1 or xpos < -1 or
+                ypos > 1 or ypos < -1) {
+                return Cell{.hash=0, .depth=0};
+            }
+
+            var cell: Cell = .{.hash=0, .depth=@truncate(u6, config.max_depth)};
+
+            var i: u56 = 0;
+            var exp = @as(u56, 1) << 2*(Cell.MAX_DEPTH - 1);
+            while (i < config.max_depth) : (i += 1) {
+                const x_flag: u56 = if(xpos > 0) 1 else 0;
+                const y_flag: u56 = if(ypos > 0) 0 else 1;
+                cell.hash |= exp * (x_flag | y_flag << 1);
+                exp = exp >> 2;
+
+                xpos = (xpos*2) + (1 - 2.0*@intToFloat(f32, x_flag));
+                ypos = (ypos*2) + (1 - 2.0*@intToFloat(f32, 1 - y_flag));
+            }
+
+            return cell;
+        }
+    }.old_hash;
+
+    const seed = 9;
+    var mesa = std.rand.DefaultPrng.init(seed);
+    var prng = mesa.random();
+
     const config = Config{
-        .position = [2]f32{0, 0},
+        .pos = Vec2{.x=0, .y=0},
         .max_depth = 10,
-        .width = 10,
-        .height = 10,
+        .size= Vec2{.x=10, .y=10},
     };
-    std.debug.print("Position: [{}, {}]\nWidth: {}\nHeight: {}\n", .{
-        config.position[0], config.position[1], config.width, config.height
-    });
 
-    const points = [_][2]f32 {
-        [2]f32{1, 1},
-        [2]f32{-1, 1},
-        [2]f32{-1, -1},
-        [2]f32{1, -1},
-        [2]f32{-3, 4},
-        [2]f32{1, -3},
-        [2]f32{-4, -4},
-    };
+    var points: [2000]Vec2 = undefined;
+    const b = config.size;
+    for (points) |*pos| {
+        const r = config.point_radius;
+        pos.x = (b.x - r) * (prng.float(f32) * 2 - 1);
+        pos.y = (b.y - r) * (prng.float(f32) * 2 - 1);
+    }
+
     for (points) |point| {
-        const cell = Cell.calcPoint(config, point);
-        std.debug.print("[{}, {}]: ", .{point[0], point[1]});
+        const cell_new = Cell.calc(config, point);
+        const cell_old = old_hash(config, point);
+        std.debug.print("[{}, {}]:\t", .{point.x, point.y});
 
-        var k: u6 = 0;
-        while (k < config.max_depth) : (k += 1) {
-            const c = cell.level(k);
-            std.debug.print("{}", .{c});
-        }
-        std.debug.print("\n",.{});
+        cell_old.print();
+        std.debug.print(" | ", .{});
+        cell_new.print();
+        std.debug.print("| is_equal: {}\n", .{cell_new.hash == cell_old.hash});
     }
-}
-
-test "Build QuadTree" {
-    
-    const seed: u64 = 9;
-    var prng = std.rand.DefaultPrng.init(seed);
-    const rand = prng.random();
-
-    const width: f32 = 5;
-    const height: f32 = 5;
-
-    var points: [32][2]f32 = undefined;
-    for (points) |*point| {
-        point.*[0] = (rand.float(f32) * 2 - 1) * width/2;
-        point.*[1] = (rand.float(f32) * 2 - 1) * height/2;
-    }
-    var tree = QuadTree.init(std.testing.allocator, 10, .{0, 0}, width, height);
-    defer tree.destroy();
-
-    tree.build(points[0..32]);
-
-    for (tree._indices) |index, i| {
-        std.debug.print("{}: ", .{i});
-        const i_mi = index % 4;
-        const i_mj = index >> 2;
-        const cell = tree._cells[i_mj][i_mi];
-        var k: u6 = 0;
-        while (!(k > Cell.MAX_DEPTH)) : (k += 1) {
-            std.debug.print("{}", .{cell.level(k)});
-        }
-        std.debug.print(" : {}\n", .{tree._cells[i_mj][i_mi].hash});
-    }
-
-    std.debug.print("Index Array:\n{any}\n", .{tree._indices});
-}
-
-test "print" {
-    std.debug.print("\n", .{});
-    const seed: u64 = 9;
-    var prng = std.rand.DefaultPrng.init(seed);
-    const rand = prng.random();
-
-    const width: f32 = 5;
-    const height: f32 = 5;
-
-    var points: [200][2]f32 = undefined;
-    for (points) |*point| {
-        point.*[0] = (rand.float(f32) * 2 - 1) * width/2;
-        point.*[1] = (rand.float(f32) * 2 - 1) * height/2;
-        std.debug.print("Point: [{}, {}]\n", .{point[0], point[1]});
-    }
-    var tree = QuadTree.init(std.testing.allocator, 15, .{0, 0}, width, height);
-    defer tree.destroy();
-
-    tree.build(points[0..]);
-    tree.print();
 }
