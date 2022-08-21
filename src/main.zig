@@ -172,6 +172,39 @@ pub fn main() anyerror!void {
     var engine = Engine.init(common.a, .{});
     defer engine.destroy();
 
+    //var hs: HashSort = HashSort.init();
+    //defer hs.destroy();
+    
+    //const seed = 9;
+    //var mesa = std.rand.DefaultPrng.init(seed);
+    //var prng = mesa.random();
+
+    //const node_count = 100000;
+    //const config = QuadTree.Config{
+    //    .pos=.{.x=0, .y=0},
+    //    .size=.{.x=10, .y=10},
+    //};
+    //const b = config.size;
+    //var positions: [node_count][2]f32 = undefined;
+
+    //for (positions[0..]) |*pos| {
+    //    const r = config.point_radius;
+    //    pos[0] = (b.x - r) * (prng.float(f32) * 2 - 1);
+    //    pos[1] = (b.y - r) * (prng.float(f32) * 2 - 1);
+    //}
+
+    //hs.hashAndSort(positions[0..], config);
+    //var indices: []u32 = undefined;
+    //var hashes: []u64 = undefined;
+    //hs.updateCpuSize(common.a, &indices, &hashes);
+    //defer common.a.free(hashes);
+    //defer common.a.free(indices);
+
+    //for (indices) |index, i| {
+    //    const hash = hashes[index];
+    //    std.debug.print("{}:  \t{}  \t{}\n", .{i, hash >> 48, hash});
+    //}
+
     render_cam.updateCameraMatrix();
 
     const direction_data = [8]f32{
@@ -197,8 +230,6 @@ pub fn main() anyerror!void {
     var show_demo_window: bool = false;
     var draw_quadtree: bool = false;
     var tick_per_frame: i32 = 1;
-    engine.doTick();
-
 
     while (!window.shouldClose()) {
         c.ImGui_ImplOpenGL3_NewFrame();
@@ -229,6 +260,7 @@ pub fn main() anyerror!void {
         _ = c.igSliderInt("Ticks per frame", &tick_per_frame, 1, 100, "%d", 0);
         _ = c.igSliderInt("Nodes In One", @ptrCast([*c]c_int, &engine.qt.config.node_count_in_one), 1, 18, "%d", 0);
 
+        _ = c.igCheckbox("Toggle Physics", &draw_quadtree);
         if (common.imButton("Draw quadtree")) {
             engine.doTick();
         }

@@ -102,6 +102,12 @@ pub fn build(self: *QuadTree, points_in: []const [2]f32) void {
     self.info = .{};
     self._cells = self._a.realloc(self._cells, hashes.len) catch unreachable;
     for (self._cells) |*cell, i| {
+        const max = ~@as(u64, 0);
+        if (hashes[i] == max) {
+            cell.hash = 0;
+            cell.depth = 0;
+            continue;
+        }
         cell.hash = @truncate(u56, hashes[i] >> 8 );
         cell.depth = @truncate(u8, self.config.max_depth);
     }
@@ -129,10 +135,7 @@ pub fn build(self: *QuadTree, points_in: []const [2]f32) void {
         point[2] = self._cells[i*4+2].hash;
         point[3] = self._cells[i*4+3].hash;
 
-        std.sort.sort(usize, point[0..], {}, struct {
-            pub fn lessThan(_: void, lhs: usize, rhs: usize) bool {
-                return lhs < rhs;
-            }}.lessThan);
+        std.sort.sort(usize, point[0..], {}, comptime std.sort.asc(usize));
         var head: usize = 0;
         var last: usize = ~@as(usize, 0);
         for (point) |p, k| {
@@ -156,17 +159,17 @@ fn buildTreeBranch(config: Config, info: *Info, cells: []Cell, indices: []const 
         var cur_index = offset_index;
         for (indices) |i| {
 
-            cells[i].depth = @truncate(u6, begin_depth);
-            cells[i].hash = @truncate(u56, offset_index - 1);
-            data[cur_index].point = Point{ .reference = i>>2 };
+            cells[i].depth = @intCast(u8, begin_depth);
+            cells[i].hash = @intCast(u56, offset_index - 1);
+            data[cur_index].point = Point{ .reference = i >> 2 };
 
             cur_index += 1;
             info.points += 1;
         }
         
         //Make sure only unique references to points exists in one cell
-        std.sort.sort(Word, data[offset_index+1..cur_index], @as(u8, 0), struct {
-            pub fn lessThan(_: u8, lhs: Word, rhs: Word) bool {
+        std.sort.sort(Word, data[offset_index+1..cur_index], {}, struct {
+            pub fn lessThan(_: void, lhs: Word, rhs: Word) bool {
                 return lhs.point.reference < rhs.point.reference;
             }}.lessThan);
         var head: u56 = 0;
@@ -209,8 +212,8 @@ fn buildTreeBranch(config: Config, info: *Info, cells: []Cell, indices: []const 
                 if (cells[i].depth == 0) break;
                 info.points += 1;
 
-                cells[i].depth = @truncate(u6, begin_depth+1);
-                cells[i].hash = @truncate(u56, qtl_index);
+                cells[i].depth = @intCast(u8, begin_depth+1);
+                cells[i].hash = @intCast(u56, qtl_index);
                 data[cur_index].point = .{.reference= i>>2};
                 cur_index += 1;
             }

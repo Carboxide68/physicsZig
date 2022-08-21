@@ -28,7 +28,7 @@ uint64_t hash(vec2 point) {
 
     if (xpos > 1.0 || xpos < -1.0 ||
         ypos > 1.0 || ypos < -1.0    ) {
-        return 0;
+        return ~0ul;
     }
 
     uint64_t result = 0;
@@ -37,7 +37,7 @@ uint64_t hash(vec2 point) {
         const uint x_flag = (xpos > 0) ? 1 : 0;
         const uint y_flag = (ypos > 0) ? 0 : 1;
 
-        result |= exponent * uint64_t(x_flag | y_flag*2UL);
+        result |= exponent * uint64_t(x_flag | y_flag*2u);
         exponent = exponent/4;
 
         xpos = (xpos*2.0) + (1.0 - 2.0*float(x_flag));
@@ -45,7 +45,6 @@ uint64_t hash(vec2 point) {
     }
 
     return result;
-
 }
 
 void main() {

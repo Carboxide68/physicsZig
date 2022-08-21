@@ -58,7 +58,7 @@ pub const Config = struct {
     node_count: usize = 100000,
     node_radius: f32 = 0.02,
 
-    size: Vec2 = .{.x=40,.y=2.5},
+    size: Vec2 = .{.x=10,.y=10},
     time_step: f32 = 0.002,
 };
 
@@ -91,7 +91,7 @@ pub fn init(a: std.mem.Allocator, config: Config) Engine {
         engine.nodes.masses[i] = 0.7 * prng.float(f32) + 0.3;
         pos.x = (b.x - r) * (prng.float(f32) * 2 - 1);
         pos.y = (b.y - r) * (prng.float(f32) * 2 - 1);
-        //const angle = prng.float(f32) * 2 * std.math.pi;
+        const angle = prng.float(f32) * 2 * std.math.pi;
         const angle: f32 = 0;
         const speed = prng.float(f32) * 8;
         engine.nodes.velocities[i] = (Vec2{.x=@cos(angle), .y=@sin(angle)}).sMult(speed);
@@ -190,24 +190,6 @@ pub fn doTick(self: *Engine) void {
 
         this.vel.* = this.vel.add(line_vel);
         this.pos.* = this.pos.add(this.vel.sMult(ts));
-    }
-    const first = self.nodes.get(0);
-    const second = self.nodes.get(1);
-    if (second.pos.sub(first.pos.*).length2() <= 4 * self.config.node_radius * self.config.node_radius) {
-        if (S.hit_last) S.do = false;
-        S.hit_last = true;
-        //for (self.qt.points) |point| {
-        //    for (point) |p| {
-        //        std.debug.print(" {} |", .{p});
-        //    }
-        //    std.debug.print("\n", .{});
-        //}
-        for (self.qt._cells) |cell| {
-            std.debug.print(" {} |", .{cell.hash});
-        }
-        std.debug.print("\n", .{});
-    } else {
-        S.hit_last = false;
     }
 }
 

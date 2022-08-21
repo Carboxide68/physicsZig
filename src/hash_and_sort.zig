@@ -158,6 +158,7 @@ pub fn updateCpuSize(self: *HashSort, a: Allocator, indices: *[]u32, hashes: *[]
     hashes.* = a.alloc(u64, self.point_count) catch return;
     self.index_buffer.read(0, self.point_count * @sizeOf(u32), 
         @ptrCast([*]u8, indices.ptr)) catch unreachable;
+
     self.hash_buffer.read(0, self.point_count * @sizeOf(u64), 
         @ptrCast([*]u8, hashes.ptr)) catch unreachable;
 }
