@@ -58,7 +58,7 @@ pub const Config = struct {
     node_count: usize = 100000,
     node_radius: f32 = 0.02,
 
-    size: Vec2 = .{.x=10,.y=10},
+    size: Vec2 = .{.x=20,.y=20},
     time_step: f32 = 0.002,
 };
 
@@ -92,7 +92,6 @@ pub fn init(a: std.mem.Allocator, config: Config) Engine {
         pos.x = (b.x - r) * (prng.float(f32) * 2 - 1);
         pos.y = (b.y - r) * (prng.float(f32) * 2 - 1);
         const angle = prng.float(f32) * 2 * std.math.pi;
-        const angle: f32 = 0;
         const speed = prng.float(f32) * 8;
         engine.nodes.velocities[i] = (Vec2{.x=@cos(angle), .y=@sin(angle)}).sMult(speed);
         const b_w: f32 = if (pos.x/(b.x*2) < 0) 0 else 1;
