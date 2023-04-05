@@ -2,27 +2,28 @@ const std = @import("std");
 const c = @import("c.zig");
 const glfw = @import("glfw");
 const renderer = @import("renderer.zig");
-const render_cam = &renderer.globals.camera;
-const HashSort = @import("hash_and_sort.zig");
-
+const tracy = @import("tracy.zig");
 const common = @import("common.zig");
-const z_p = common.nullPtr;
 const buffer = @import("buffer.zig");
+
 const Buffer = buffer.Buffer;
 const Shader = @import("shader.zig").Shader;
 const VertexArray = buffer.VertexArray;
-const VoidBuffer = @import("voidbuffer.zig");
 const Camera = @import("camera.zig");
 const QuadTree = @import("quadtree.zig");
-const Engine = @import("engine.zig");
 const v = @import("vector.zig");
 const Vec2 = v.Vec2;
 
+const co_log = std.log.scoped(.co);
+
+const z_p = common.nullPtr;
+const render_cam = &renderer.globals.camera;
 const glsl_version = "#version 130";
+const NotOk = error{NotOk};
 
 var ig_context: *c.ImGuiContext = undefined;
 
-fn glfw_error_callback(error_code: glfw.Error, description: [:0]const u8) void {
+fn glfw_error_callback(error_code: glfw.ErrorCode, description: [:0]const u8) void {
     std.debug.print("GLFW error {}: {s}\n", .{ error_code, description });
 }
 
@@ -31,6 +32,8 @@ fn framebuffer_callback(window: glfw.Window, width: u32, height: u32) void {
 
     const w = @intCast(i32, width);
     const h = @intCast(i32, height);
+    //const max = if (w > h) w else h;
+    //c.glViewport(@divFloor(max - w, 2), @divFloor(max - h, 2), w, h);
     c.glViewport(0, 0, w, h);
 
     render_cam.updateCameraMatrix();
@@ -43,13 +46,13 @@ fn opengl_error_callback(source: c.GLenum, error_type: c.GLenum, id: c.GLuint, s
     _ = error_type;
     if (severity == c.GL_DEBUG_SEVERITY_HIGH) {
         std.debug.print("OpenGL Error! | Severity: High | {s}\n", .{m});
+        unreachable;
     }
 }
 
 fn glfw_scroll_callback(window: glfw.Window, x: f64, y: f64) void {
-    _ = window;
-    _ = y;
     _ = x;
+    _ = window;
     render_cam.zoom(@floatCast(f32, std.math.pow(f64, 1.2, y)));
 }
 
@@ -59,16 +62,13 @@ fn glfw_mouse_callback(window: glfw.Window, x: f64, y: f64) void {
         var last_xpos: f64 = 0;
         var last_ypos: f64 = 0;
     };
-    _ = window;
-    _ = x;
-    _ = y;
     var x_diff = @floatCast(f32, x - s.last_xpos);
     var y_diff = @floatCast(f32, y - s.last_ypos);
     s.last_xpos = x;
     s.last_ypos = y;
 
     if (should_pan) {
-        const window_size = window.getSize() catch return;
+        const window_size = window.getSize();
         const fwidth = @intToFloat(f32, window_size.width);
         const fheight = @intToFloat(f32, window_size.height);
         const x_p: f32 = -2 * x_diff / fwidth;
@@ -92,10 +92,8 @@ fn glfw_key_callback(window: glfw.Window, key: glfw.Key, scancode: i32, action: 
 }
 
 fn glfw_mouse_button_callback(window: glfw.Window, button: glfw.MouseButton, action: glfw.Action, mods: glfw.Mods) void {
-    _ = window;
-    _ = button;
-    _ = action;
     _ = mods;
+    _ = window;
     switch (button) {
         .left => {
             if (action == .press) {
@@ -111,25 +109,36 @@ fn glfw_mouse_button_callback(window: glfw.Window, button: glfw.MouseButton, act
 
 fn glInit(window: *glfw.Window) !void {
     glfw.setErrorCallback(glfw_error_callback);
-    try glfw.init(.{});
+    if (!glfw.init(.{})) {
+        co_log.warn("Failed to initialize Glfw!", .{});
+    }
 
-    window.* = try glfw.Window.create(640, 480, "Hello World", null, null, .{
-        .context_version_major = 4,
-        .context_version_minor = 5,
-        .opengl_profile = .opengl_core_profile,
-    });
-    try glfw.makeContextCurrent(window.*);
+    window.* = wndw: {
+        var maybe_window = glfw.Window.create(640, 480, "Hello World", null, null, .{
+            .context_version_major = 4,
+            .context_version_minor = 5,
+            .opengl_profile = .opengl_core_profile,
+        });
+        if (maybe_window) |w| {
+            break :wndw w;
+        } else {
+            co_log.err("Failed to initialize glew!", .{});
+            return error.NotOk;
+        }
+    };
+
+    glfw.makeContextCurrent(window.*);
     window.setFramebufferSizeCallback(framebuffer_callback);
     window.setScrollCallback(glfw_scroll_callback);
     window.setCursorPosCallback(glfw_mouse_callback);
     window.setKeyCallback(glfw_key_callback);
     window.setMouseButtonCallback(glfw_mouse_button_callback);
 
-    glfw.swapInterval(1.0) catch unreachable;
+    glfw.swapInterval(1);
 
     const err = c.glewInit();
     if (c.GLEW_OK != err) {
-        std.debug.print("Error: {s}\n", .{c.glewGetErrorString(err)});
+        co_log.err("Error: {s}\n", .{c.glewGetErrorString(err)});
         return error.Error;
     }
 
@@ -169,42 +178,6 @@ pub fn main() anyerror!void {
 
     c.glClearColor(0.3, 0.3, 0, 1);
 
-    var engine = Engine.init(common.a, .{});
-    defer engine.destroy();
-
-    //var hs: HashSort = HashSort.init();
-    //defer hs.destroy();
-    
-    //const seed = 9;
-    //var mesa = std.rand.DefaultPrng.init(seed);
-    //var prng = mesa.random();
-
-    //const node_count = 100000;
-    //const config = QuadTree.Config{
-    //    .pos=.{.x=0, .y=0},
-    //    .size=.{.x=10, .y=10},
-    //};
-    //const b = config.size;
-    //var positions: [node_count][2]f32 = undefined;
-
-    //for (positions[0..]) |*pos| {
-    //    const r = config.point_radius;
-    //    pos[0] = (b.x - r) * (prng.float(f32) * 2 - 1);
-    //    pos[1] = (b.y - r) * (prng.float(f32) * 2 - 1);
-    //}
-
-    //hs.hashAndSort(positions[0..], config);
-    //var indices: []u32 = undefined;
-    //var hashes: []u64 = undefined;
-    //hs.updateCpuSize(common.a, &indices, &hashes);
-    //defer common.a.free(hashes);
-    //defer common.a.free(indices);
-
-    //for (indices) |index, i| {
-    //    const hash = hashes[index];
-    //    std.debug.print("{}:  \t{}  \t{}\n", .{i, hash >> 48, hash});
-    //}
-
     render_cam.updateCameraMatrix();
 
     const direction_data = [8]f32{
@@ -213,7 +186,6 @@ pub fn main() anyerror!void {
         0, 0,
         0, 1,
     };
-    var direction_pos = Vec2{ .x = -0.9, .y = -0.9 };
     var dir_vao = VertexArray.init();
     defer dir_vao.destroy();
 
@@ -231,10 +203,72 @@ pub fn main() anyerror!void {
     var draw_quadtree: bool = false;
     var tick_per_frame: i32 = 1;
 
+    var qt = try QuadTree.init(common.a, .{
+        .pos = .{ .x = 0, .y = 0 },
+        .size = .{ .x = 10, .y = 10 },
+    });
+    defer qt.destroy();
+
+    std.debug.print(
+        "Timings:\n\tGen: {d:.5}ms\n\tHash: {d:.5}ms\n\tSort: {d:.5}ms\n\tDo Tick: {d:.5}ms\n",
+        .{
+            @intToFloat(f32, QuadTree.Timings.gen_points) / std.time.ns_per_ms,
+            @intToFloat(f32, QuadTree.Timings.hash) / std.time.ns_per_ms,
+            @intToFloat(f32, QuadTree.Timings.sort_points) / std.time.ns_per_ms,
+            @intToFloat(f32, QuadTree.Timings.do_tick) / std.time.ns_per_ms,
+        },
+    );
+    var circle_shader = Shader.initFile("src/circle_shader.os") catch unreachable;
+    const circle_polygon_size = 32;
+    const circle_vertex_data = blk: {
+        var data: [circle_polygon_size + 1][2]f32 = undefined;
+        data[0] = .{ 0.0, 0.0 };
+
+        for (data[1..], 0..) |*poly, i| {
+            const fi = @intToFloat(f32, i);
+            const fi2 = @intToFloat(f32, circle_polygon_size - 1);
+            const angle: f32 = std.math.pi * 2.0 * fi / fi2;
+            poly.* = .{ std.math.cos(angle), std.math.sin(angle) };
+        }
+        break :blk data;
+    };
+    var circle_vao = VertexArray.init();
+    var circle_vbo = Buffer.init(@sizeOf([2]f32) * (circle_polygon_size + 1), .static_draw);
+    circle_vbo.subData(0, @sizeOf([2]f32) * (circle_polygon_size + 1), common.toData(&circle_vertex_data[0])) catch unreachable;
+    var node_buffer = Buffer.init(0, .stream_draw);
+    circle_vao.bindVertexBuffer(circle_vbo, 0, 0, 8);
+    circle_vao.setLayout(0, 2, 0, .float);
+    const POINT_COUNT = 50000;
+    var ts: f32 = 0.01;
+    qt.config.vel_mod = 10;
+    qt.generatePoints(POINT_COUNT);
+    qt.generateHashes();
+    qt.sortPoints();
+    qt.doTick(ts);
+    var ft: i128 = 0;
+
     while (!window.shouldClose()) {
+        const start = std.time.nanoTimestamp();
+        defer ft = std.time.nanoTimestamp() - start;
+
         c.ImGui_ImplOpenGL3_NewFrame();
         c.ImGui_ImplGlfw_NewFrame();
         c.igNewFrame();
+
+        if (draw_quadtree) {
+            qt.generateHashes();
+            qt.sortPoints();
+            qt.doTick(ts);
+            std.debug.print(
+                "Timings:\n\tGen: {d:.5}ms\n\tHash: {d:.5}ms\n\tSort: {d:.5}ms\n\tDo Tick: {d:.5}ms\n",
+                .{
+                    @intToFloat(f32, QuadTree.Timings.gen_points) / std.time.ns_per_ms,
+                    @intToFloat(f32, QuadTree.Timings.hash) / std.time.ns_per_ms,
+                    @intToFloat(f32, QuadTree.Timings.sort_points) / std.time.ns_per_ms,
+                    @intToFloat(f32, QuadTree.Timings.do_tick) / std.time.ns_per_ms,
+                },
+            );
+        }
 
         c.glClearColor(1.0, 1.0, 1.0, 1);
         c.glClear(c.GL_COLOR_BUFFER_BIT | c.GL_DEPTH_BUFFER_BIT);
@@ -242,28 +276,13 @@ pub fn main() anyerror!void {
         _ = c.igBegin("Custom Window", 0, 0);
         _ = c.igCheckbox("Show Demo Window", &show_demo_window);
 
-        if (draw_quadtree) {
-            var i: u32 = 0;
-            while (i < tick_per_frame) : (i += 1) {
-                engine.doTick();
-            }
-        }
-
-        engine.draw(render_cam.*);
-
-        dir_shader.bind();
-        dir_shader.uniform(direction_pos, "u_position");
-        dir_shader.uniform(render_cam.getAssembled(), "u_camera_matrix");
-        dir_vao.drawArrays(.lines, 0, 4);
-        
-        _ = c.igInputFloat2("Lines", &direction_pos.x, "%.3f", 0);
         _ = c.igSliderInt("Ticks per frame", &tick_per_frame, 1, 100, "%d", 0);
-        _ = c.igSliderInt("Nodes In One", @ptrCast([*c]c_int, &engine.qt.config.node_count_in_one), 1, 18, "%d", 0);
+
+        _ = c.igSliderFloat("Tick speed", &ts, 0.001, 1, "%f", 0);
 
         _ = c.igCheckbox("Toggle Physics", &draw_quadtree);
-        if (common.imButton("Draw quadtree")) {
-            engine.doTick();
-        }
+
+        _ = c.igText("Frame Time: %f ms", @intToFloat(f32, ft) / 1_000_000);
 
         if (show_demo_window) {
             c.igShowDemoWindow(&show_demo_window);
@@ -272,12 +291,38 @@ pub fn main() anyerror!void {
         c.igEnd();
         c.igRender();
 
+        node_buffer.realloc(
+            @sizeOf(QuadTree.Point) * qt.points.len,
+            .stream_draw,
+        );
+        node_buffer.subData(
+            0,
+            @sizeOf(QuadTree.Point) * qt.points.len,
+            common.toData(qt.points.ptr),
+        ) catch unreachable;
+        node_buffer.bindRange(
+            .shader_storage,
+            0,
+            0,
+            @sizeOf(QuadTree.Point) * qt.points.len,
+        ) catch unreachable;
+
+        const size_matrix = v.Mat3{
+            .data = .{
+                1,                0,                0,
+                0,                1,                0,
+                -qt.config.pos.x, -qt.config.pos.y, 1,
+            },
+        };
+        circle_shader.bind();
+        circle_shader.uniform(qt.config.point_radius, "u_radius");
+        circle_shader.uniform(render_cam.getAssembled(), "u_assembled_matrix");
+        circle_shader.uniform(size_matrix, "u_size_matrix");
+        circle_vao.drawArraysInstanced(.triangle_fan, 0, circle_vertex_data.len, @intCast(u32, qt.points.len));
+
         c.ImGui_ImplOpenGL3_RenderDrawData(c.igGetDrawData());
+        window.swapBuffers();
 
-        if (window.swapBuffers()) {} else |err| {
-            std.debug.panic("failed to swap buffers: {}", .{err});
-        }
-
-        try glfw.pollEvents();
+        glfw.pollEvents();
     }
 }

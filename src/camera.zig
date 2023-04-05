@@ -13,7 +13,6 @@ camera_matrix: Mat3 = Mat3.init(1),
 view_matrix: Mat3 = Mat3.init(1),
 
 pub fn init() Camera {
-
     var camera = Camera{};
     camera.updateCameraMatrix();
 
@@ -25,15 +24,15 @@ pub fn getAssembled(self: Camera) Mat3 {
 }
 
 pub fn updateCameraMatrix(self: *Camera) void {
-    const window_size = renderer.globals.window.getFramebufferSize() catch return;
+    const window_size = renderer.globals.window.getFramebufferSize();
     const width = @intToFloat(f32, window_size.width);
     const height = @intToFloat(f32, window_size.height);
-    const bigger = @maximum(width, height);
-    self.camera_matrix = .{.data=[9]f32{
-        bigger/width,   0,              0,
-        0,              bigger/height,  0,
-        0,              0,              1,
-    }};
+    const bigger = @max(width, height);
+    self.camera_matrix = .{ .data = [9]f32{
+        bigger / width, 0,               0,
+        0,              bigger / height, 0,
+        0,              0,               1,
+    } };
 }
 
 pub fn setPos(self: *Camera, x: f32, y: f32) void {
@@ -49,7 +48,7 @@ pub fn move(self: *Camera, x: f32, y: f32) void {
 pub fn getPos(self: Camera) Vec2 {
     const x = self.view_matrix.data[6];
     const y = self.view_matrix.data[7];
-    return .{.x=-x, .y=-y};
+    return .{ .x = -x, .y = -y };
 }
 
 pub fn zoom(self: *Camera, mag: f32) void {
@@ -71,5 +70,4 @@ pub fn setZoom(self: *Camera, mag: f32) void {
 pub fn getZoom(self: Camera) f32 {
     const v1 = Vec2.gen(self.view_matrix.data[0], self.view_matrix.data[1]);
     return v1.length();
-
 }

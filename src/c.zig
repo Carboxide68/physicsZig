@@ -1,6 +1,4 @@
-
 pub usingnamespace @cImport({
-
     @cDefine("CIMGUI_DEFINE_ENUMS_AND_STRUCTS", "1");
     @cDefine("CIMGUI_USE_GLFW", "1");
     @cDefine("CIMGUI_USE_OPENGL3", "1");
@@ -11,5 +9,4 @@ pub usingnamespace @cImport({
     @cUndef("CIMGUI_DEFINE_ENUMS_AND_STRUCTS");
 
     @cInclude("GL/glew.h");
-
 });

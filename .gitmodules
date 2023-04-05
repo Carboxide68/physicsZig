@@ -4,3 +4,6 @@
 [submodule "deps/mach-glfw"]
 	path = deps/mach-glfw
 	url = https://github.com/hexops/mach-glfw.git
+[submodule "deps/tracy"]
+	path = deps/tracy
+	url = https://github.com/wolfpld/tracy.git

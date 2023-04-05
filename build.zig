@@ -10,28 +10,46 @@ pub fn build(b: *std.build.Builder) void {
 
     // Standard release options allow the person running `zig build` to select
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
-    const mode = b.standardReleaseOptions();
+    const optimize = b.standardOptimizeOption(.{});
 
-    const exe = b.addExecutable("physicsZig", "src/main.zig");
+    const exe = b.addExecutable(.{
+        .name = "physicsZig",
+        .root_source_file = .{ .path = "src/main.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
 
     const imgui = "deps/cimgui/imgui/";
-    exe.addCSourceFiles(&[_][]const u8 {
-        imgui++"imgui.cpp",
-        imgui++"imgui_draw.cpp",
-        imgui++"imgui_tables.cpp",
-        imgui++"imgui_widgets.cpp",
-        imgui++"imgui_demo.cpp",
-        imgui++"backends/imgui_impl_opengl3.cpp",
-        imgui++"backends/imgui_impl_glfw.cpp",
+    exe.addCSourceFiles(&[_][]const u8{
+        imgui ++ "imgui.cpp",
+        imgui ++ "imgui_draw.cpp",
+        imgui ++ "imgui_tables.cpp",
+        imgui ++ "imgui_widgets.cpp",
+        imgui ++ "imgui_demo.cpp",
+        imgui ++ "backends/imgui_impl_opengl3.cpp",
+        imgui ++ "backends/imgui_impl_glfw.cpp",
         "deps/cimgui/cimgui.cpp",
-    }, &[_][]const u8 {"-DIMGUI_IMPL_API=extern \"C\""});
+    }, &[_][]const u8{"-DIMGUI_IMPL_API=extern \"C\""});
 
-    exe.addLibPath("deps/lib/");
-    exe.addIncludeDir("deps/include/");
-    exe.addIncludeDir("deps/cimgui/");
-    exe.addIncludeDir(imgui);
-    exe.addPackagePath("glfw", "deps/mach-glfw/src/main.zig");
-    
+    var enable_tracy = b.option(bool, "tracy_enable", "Enable tracy for profiling") orelse false;
+    //enable_tracy = enable_tracy and optimize != .Debug;
+    const opts = b.addOptions();
+    exe.addOptions("build_options", opts);
+    opts.addOption(bool, "enable_tracy", enable_tracy);
+    if (enable_tracy) {
+        exe.addCSourceFile(
+            "deps/tracy/public/TracyClient.cpp",
+            &.{ "-g", "-DTRACY_ENABLE=1" },
+        );
+        exe.addIncludePath("deps/tracy/public/");
+    }
+
+    exe.addLibraryPath("deps/lib/");
+    exe.addIncludePath("deps/include/");
+    exe.addIncludePath("deps/cimgui/");
+    exe.addIncludePath(imgui);
+    exe.addModule("glfw", glfw.module(b));
+
     if (target.isWindows()) {
         exe.linkSystemLibrary("gdi32");
         exe.linkSystemLibrary("opengl32");
@@ -43,13 +61,10 @@ pub fn build(b: *std.build.Builder) void {
         exe.linkSystemLibrary("glew");
     }
 
-    glfw.link(b, exe, .{});
-
+    glfw.link(b, exe, .{ .wayland = false }) catch unreachable;
     exe.linkLibC();
     exe.linkLibCpp();
 
-    exe.setTarget(target);
-    exe.setBuildMode(mode);
     exe.install();
 
     const run_cmd = exe.run();
