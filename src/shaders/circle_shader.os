@@ -3,31 +3,39 @@
 
 layout(location=0) in vec2 in_Pos;
 
+struct Point {
+    vec2 pos;
+    uint id;
+    uint hash;
+};
+
 layout(std430, binding=0) restrict readonly buffer sphere_positions {
-    float p[];
-} in_pos;
+    Point points[];
+} ps;
+
+layout(std430, binding=1) restrict readonly buffer auxillary_data {
+    vec2 vel[];
+} aux;
 
 
 out flat uint instance;
 
 uniform float u_radius;
 uniform mat3 u_assembled_matrix;
-uniform mat3 u_size_matrix;
 
 void main() {
 
-    const uint id = floatBitsToUint(in_pos.p[gl_InstanceID * 3 + 2]);
-    const vec2 pos = vec2(in_pos.p[gl_InstanceID * 3], in_pos.p[gl_InstanceID * 3 + 1]);
-    const vec2 center_position = (u_size_matrix * vec3(pos, 1)).xy;
+    const Point point = ps.points[gl_InstanceID];
+    const uint id = point.id;
+    const vec2 pos = point.pos;
     const mat3 model_matrix = mat3(
         u_radius, 0, 0,
         0, u_radius, 0,
-        center_position.x, center_position.y, 1
+        -pos.x, -pos.y, 1
         );
     gl_Position = vec4(u_assembled_matrix * model_matrix * vec3(in_Pos, 1), 1);
     gl_Position.z = 1;
     instance = id;
-
 }
 
 @fragment

@@ -9,10 +9,11 @@ const buffer = @import("buffer.zig");
 const Buffer = buffer.Buffer;
 const Shader = @import("shader.zig").Shader;
 const VertexArray = buffer.VertexArray;
-const Camera = @import("camera.zig");
+const Camera = @import("Camera.zig");
 const QuadTree = @import("quadtree.zig");
 const v = @import("vector.zig");
 const Vec2 = v.Vec2;
+const QTG = @import("quadtree_gpu.zig");
 
 const co_log = std.log.scoped(.co);
 
@@ -46,7 +47,6 @@ fn opengl_error_callback(source: c.GLenum, error_type: c.GLenum, id: c.GLuint, s
     _ = error_type;
     if (severity == c.GL_DEBUG_SEVERITY_HIGH) {
         std.debug.print("OpenGL Error! | Severity: High | {s}\n", .{m});
-        unreachable;
     }
 }
 
@@ -218,33 +218,11 @@ pub fn main() anyerror!void {
             @intToFloat(f32, QuadTree.Timings.do_tick) / std.time.ns_per_ms,
         },
     );
-    var circle_shader = Shader.initFile("src/circle_shader.os") catch unreachable;
-    const circle_polygon_size = 32;
-    const circle_vertex_data = blk: {
-        var data: [circle_polygon_size + 1][2]f32 = undefined;
-        data[0] = .{ 0.0, 0.0 };
-
-        for (data[1..], 0..) |*poly, i| {
-            const fi = @intToFloat(f32, i);
-            const fi2 = @intToFloat(f32, circle_polygon_size - 1);
-            const angle: f32 = std.math.pi * 2.0 * fi / fi2;
-            poly.* = .{ std.math.cos(angle), std.math.sin(angle) };
-        }
-        break :blk data;
-    };
-    var circle_vao = VertexArray.init();
-    var circle_vbo = Buffer.init(@sizeOf([2]f32) * (circle_polygon_size + 1), .static_draw);
-    circle_vbo.subData(0, @sizeOf([2]f32) * (circle_polygon_size + 1), common.toData(&circle_vertex_data[0])) catch unreachable;
-    var node_buffer = Buffer.init(0, .stream_draw);
-    circle_vao.bindVertexBuffer(circle_vbo, 0, 0, 8);
-    circle_vao.setLayout(0, 2, 0, .float);
     const POINT_COUNT = 50000;
+    var qtg = try QTG.init(common.a, .{});
+    defer qtg.destroy();
+    qtg.generatePoints(POINT_COUNT);
     var ts: f32 = 0.01;
-    qt.config.vel_mod = 10;
-    qt.generatePoints(POINT_COUNT);
-    qt.generateHashes();
-    qt.sortPoints();
-    qt.doTick(ts);
     var ft: i128 = 0;
 
     while (!window.shouldClose()) {
@@ -254,24 +232,13 @@ pub fn main() anyerror!void {
         c.ImGui_ImplOpenGL3_NewFrame();
         c.ImGui_ImplGlfw_NewFrame();
         c.igNewFrame();
-
-        if (draw_quadtree) {
-            qt.generateHashes();
-            qt.sortPoints();
-            qt.doTick(ts);
-            std.debug.print(
-                "Timings:\n\tGen: {d:.5}ms\n\tHash: {d:.5}ms\n\tSort: {d:.5}ms\n\tDo Tick: {d:.5}ms\n",
-                .{
-                    @intToFloat(f32, QuadTree.Timings.gen_points) / std.time.ns_per_ms,
-                    @intToFloat(f32, QuadTree.Timings.hash) / std.time.ns_per_ms,
-                    @intToFloat(f32, QuadTree.Timings.sort_points) / std.time.ns_per_ms,
-                    @intToFloat(f32, QuadTree.Timings.do_tick) / std.time.ns_per_ms,
-                },
-            );
-        }
-
         c.glClearColor(1.0, 1.0, 1.0, 1);
         c.glClear(c.GL_COLOR_BUFFER_BIT | c.GL_DEPTH_BUFFER_BIT);
+
+        if (draw_quadtree) {
+            qtg.tick(ts);
+        }
+        qtg.draw(render_cam.*);
 
         _ = c.igBegin("Custom Window", 0, 0);
         _ = c.igCheckbox("Show Demo Window", &show_demo_window);
@@ -290,35 +257,6 @@ pub fn main() anyerror!void {
 
         c.igEnd();
         c.igRender();
-
-        node_buffer.realloc(
-            @sizeOf(QuadTree.Point) * qt.points.len,
-            .stream_draw,
-        );
-        node_buffer.subData(
-            0,
-            @sizeOf(QuadTree.Point) * qt.points.len,
-            common.toData(qt.points.ptr),
-        ) catch unreachable;
-        node_buffer.bindRange(
-            .shader_storage,
-            0,
-            0,
-            @sizeOf(QuadTree.Point) * qt.points.len,
-        ) catch unreachable;
-
-        const size_matrix = v.Mat3{
-            .data = .{
-                1,                0,                0,
-                0,                1,                0,
-                -qt.config.pos.x, -qt.config.pos.y, 1,
-            },
-        };
-        circle_shader.bind();
-        circle_shader.uniform(qt.config.point_radius, "u_radius");
-        circle_shader.uniform(render_cam.getAssembled(), "u_assembled_matrix");
-        circle_shader.uniform(size_matrix, "u_size_matrix");
-        circle_vao.drawArraysInstanced(.triangle_fan, 0, circle_vertex_data.len, @intCast(u32, qt.points.len));
 
         c.ImGui_ImplOpenGL3_RenderDrawData(c.igGetDrawData());
         window.swapBuffers();

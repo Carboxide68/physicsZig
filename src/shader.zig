@@ -108,6 +108,7 @@ pub const Shader = struct {
         defer {
             for (programs[0..program_count]) |p| c.glDeleteShader(p._handle);
         }
+
         while (true) {
             const shader_program = try makeProgram(file_string, &head);
             if (shader_program.program_type == .end) break;

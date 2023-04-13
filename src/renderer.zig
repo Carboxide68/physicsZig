@@ -1,4 +1,4 @@
-const Camera = @import("camera.zig");
+const Camera = @import("Camera.zig");
 const glfw = @import("glfw");
 
 pub const globals = struct {

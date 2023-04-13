@@ -172,6 +172,7 @@ pub const Buffer = struct {
 
     pub fn clear(self: *Buffer, offset: usize, size: usize) !void {
         if (@intCast(u64, offset) + @intCast(u64, size) > self.size) return error.InvalidAccess;
+        const data = @as(u256, 0);
         c.glClearNamedBufferSubData(
             self._buffer_handle,
             c.GL_RGBA8,
@@ -179,7 +180,20 @@ pub const Buffer = struct {
             @intCast(isize, size),
             c.GL_RGBA,
             c.GL_UNSIGNED_BYTE,
-            common.nullPtr(anyopaque),
+            @ptrCast(*const anyopaque, &data),
+        );
+    }
+
+    //Copies from `other` to `self`.
+    pub fn copy(self: *Buffer, other: Buffer, offset_read: usize, offset_write: usize, size: usize) !void {
+        if (@intCast(u64, offset_read) + @intCast(u64, size) > other.size) return error.InvalidAccess;
+        if (@intCast(u64, offset_write) + @intCast(u64, size) > self.size) return error.InvalidAccess;
+        c.glCopyNamedBufferSubData(
+            other._buffer_handle,
+            self._buffer_handle,
+            @intCast(c_long, offset_read),
+            @intCast(c_long, offset_write),
+            @intCast(c_long, size),
         );
     }
 };

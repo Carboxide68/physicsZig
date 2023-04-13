@@ -20,7 +20,8 @@ void main() {
 		b.buckets[i] += tot;
 		tot += tmp;
 	}
-	for (uint i = id; i < 16; i++) {
-		atomicAdd(b.buckets[b.buckets.len - 16 + i], tot);
+	for (uint i = id+1; i < 16; i++) {
+		atomicAdd(b.buckets[b.buckets.length() - 16 + i], tot);
 	}
 }
+@end

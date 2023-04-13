@@ -305,11 +305,10 @@ fn lineCollide(p: [2]f32, vel: [2]f32, line: [2][2]f32, r: f32) [2]f32 {
 
     const orth_line = [2]f32{ -l_diff[1], l_diff[0] };
     const l_length2 = l_diff[0] * l_diff[0] + l_diff[1] * l_diff[1];
-    const l_length = @sqrt(l_length2);
-    const normal_orth_line = [2]f32{ orth_line[0] / l_length, orth_line[1] / l_length };
-
     if (l_length2 < between[0] * between[0] + between[1] * between[1]) return zero;
 
+    const l_length = @sqrt(l_length2);
+    const normal_orth_line = [2]f32{ orth_line[0] / l_length, orth_line[1] / l_length };
     const len_between = normal_orth_line[0] * between[0] + normal_orth_line[1] * between[1];
     const vel_between = normal_orth_line[0] * vel[0] + normal_orth_line[1] * vel[1];
     var len_sign: f32 = if (len_between > 0) 1 else -1;
@@ -317,8 +316,7 @@ fn lineCollide(p: [2]f32, vel: [2]f32, line: [2][2]f32, r: f32) [2]f32 {
     if (len_sign == vel_sign) return zero;
 
     if (std.math.fabs(len_between) > r + PADDING) return zero;
-    var velocity = normal_orth_line[0] * vel[0] + normal_orth_line[1] * vel[1];
-    velocity *= -2;
+    const velocity = vel_between * -2;
     const to_line = [2]f32{ normal_orth_line[0] * velocity, normal_orth_line[1] * velocity };
     return to_line;
 }
