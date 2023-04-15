@@ -238,7 +238,7 @@ pub fn main() anyerror!void {
     var node_buffer = Buffer.init(0, .stream_draw);
     circle_vao.bindVertexBuffer(circle_vbo, 0, 0, 8);
     circle_vao.setLayout(0, 2, 0, .float);
-    const POINT_COUNT = 50000;
+    const POINT_COUNT = 100000;
     var ts: f32 = 0.01;
     qt.config.vel_mod = 10;
     qt.generatePoints(POINT_COUNT);
