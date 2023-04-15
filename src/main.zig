@@ -201,6 +201,7 @@ pub fn main() anyerror!void {
 
     var show_demo_window: bool = false;
     var draw_quadtree: bool = false;
+    var draw_points: bool = false;
     var tick_per_frame: i32 = 1;
 
     var qt = try QuadTree.init(common.a, .{
@@ -238,7 +239,9 @@ pub fn main() anyerror!void {
         if (draw_quadtree) {
             qtg.tick(ts);
         }
-        qtg.draw(render_cam.*);
+        if (draw_points) {
+            qtg.draw(render_cam.*);
+        }
 
         _ = c.igBegin("Custom Window", 0, 0);
         _ = c.igCheckbox("Show Demo Window", &show_demo_window);
@@ -248,6 +251,7 @@ pub fn main() anyerror!void {
         _ = c.igSliderFloat("Tick speed", &ts, 0.001, 1, "%f", 0);
 
         _ = c.igCheckbox("Toggle Physics", &draw_quadtree);
+        _ = c.igCheckbox("Draw", &draw_points);
 
         _ = c.igText("Frame Time: %f ms", @intToFloat(f32, ft) / 1_000_000);
 

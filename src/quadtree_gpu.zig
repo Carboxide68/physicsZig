@@ -142,9 +142,15 @@ const ProgramHandler = struct {
 
     pub fn execute(self: *ProgramHandler, size: [2]f32, pos: [2]f32, radius: f32, ts: f32) void {
         self.buckets.clear(0, self.buckets.size) catch unreachable;
-        //self.inv_buffer.clear(0, self.inv_buffer.size) catch unreachable;
-        //self.inv_buffer.bindAll(.shader_storage, 5) catch unreachable;
+        self.inv_buffer.clear(0, self.inv_buffer.size) catch unreachable;
+        self.inv_buffer.bindAll(.shader_storage, 1) catch unreachable;
 
+        self.aux_copy.copy(
+            self.aux,
+            0,
+            0,
+            self.aux.size,
+        ) catch unreachable;
         self.hash_sort_stage1.bind();
         self.points.bindAll(.shader_storage, 0) catch unreachable;
         self.copy.bindAll(.shader_storage, 2) catch unreachable;
@@ -163,20 +169,13 @@ const ProgramHandler = struct {
 
         self.accumulate.bind();
         c.glDispatchCompute(1, 1, 1);
-        c.glMemoryBarrier(c.GL_SHADER_STORAGE_BARRIER_BIT |
-            c.GL_BUFFER_UPDATE_BARRIER_BIT);
+        c.glMemoryBarrier(c.GL_SHADER_STORAGE_BARRIER_BIT);
 
         self.buckets.bindAll(.shader_storage, 3) catch unreachable;
         self.sort.bind();
         c.glDispatchCompute(4, 4, 4);
         c.glMemoryBarrier(c.GL_SHADER_STORAGE_BARRIER_BIT);
 
-        self.aux_copy.copy(
-            self.aux,
-            0,
-            0,
-            self.aux.size,
-        ) catch unreachable;
         self.copy.copy(
             self.points,
             0,
@@ -191,7 +190,7 @@ const ProgramHandler = struct {
         self.physics.uniform(size, "u_size");
         self.aux.bindAll(.shader_storage, 4) catch unreachable;
         self.aux_copy.bindAll(.shader_storage, 5) catch unreachable;
-        c.glDispatchCompute(4, 4, 4);
+        c.glDispatchCompute(1, 1, 1);
         c.glMemoryBarrier(c.GL_SHADER_STORAGE_BARRIER_BIT);
     }
 
@@ -252,9 +251,9 @@ pub fn generatePoints(self: *QTG, count: usize) void {
 
     for (points, velocities, 0..) |*point, *vel, i| {
         point.id = @intCast(u32, i);
-        const x = ((random.float(f32) - 0.5) * 2 * self.config.size[0] + self.config.pos[0]);
+        const x = (random.float(f32) - 0.5) * 2 * self.config.size[0] + self.config.pos[0];
 
-        const y = ((random.float(f32) - 0.5) * 2 * self.config.size[1] + self.config.pos[1]);
+        const y = (random.float(f32) - 0.5) * 2 * self.config.size[1] + self.config.pos[1];
 
         const vx = (random.float(f32) - 0.5) * 2 * self.config.vel_mod;
         const vy = (random.float(f32) - 0.5) * 2 * self.config.vel_mod;
