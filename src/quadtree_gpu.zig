@@ -59,7 +59,7 @@ const ProgramHandler = struct {
         ph.aux_copy = Buffer.init(0, .static_read);
         // Last 16 elements are reserved for accumulations
         ph.buckets = Buffer.init(
-            (1 + 16 + std.math.pow(usize, 2, 16)) * @sizeOf(u32),
+            std.math.pow(usize, 2, 20) * @sizeOf(u32),
             .static_read,
         );
         ph.inv_buffer = Buffer.init(10000000, .static_read);
@@ -145,13 +145,13 @@ const ProgramHandler = struct {
         self.inv_buffer.clear(0, self.inv_buffer.size) catch unreachable;
         self.inv_buffer.bindAll(.shader_storage, 1) catch unreachable;
 
+        c.glMemoryBarrier(c.GL_BUFFER_UPDATE_BARRIER_BIT);
         self.aux_copy.copy(
             self.aux,
             0,
             0,
             self.aux.size,
         ) catch unreachable;
-        self.hash_sort_stage1.bind();
         self.points.bindAll(.shader_storage, 0) catch unreachable;
         self.copy.bindAll(.shader_storage, 2) catch unreachable;
         self.buckets.bindRange(
@@ -161,6 +161,7 @@ const ProgramHandler = struct {
             self.buckets.size - @sizeOf(u32),
         ) catch unreachable;
 
+        self.hash_sort_stage1.bind();
         self.hash_sort_stage1.uniform(size, "u_size");
         self.hash_sort_stage1.uniform(pos, "u_pos");
 
@@ -188,9 +189,15 @@ const ProgramHandler = struct {
         self.physics.uniform(radius, "u_radius");
         self.physics.uniform(ts, "u_ts");
         self.physics.uniform(size, "u_size");
+
+        self.points.bindAll(.shader_storage, 0) catch unreachable;
+        self.inv_buffer.bindAll(.shader_storage, 1) catch unreachable;
+        self.copy.bindAll(.shader_storage, 2) catch unreachable;
+        self.buckets.bindAll(.shader_storage, 3) catch unreachable;
         self.aux.bindAll(.shader_storage, 4) catch unreachable;
         self.aux_copy.bindAll(.shader_storage, 5) catch unreachable;
-        c.glDispatchCompute(1, 1, 1);
+
+        c.glDispatchCompute(4, 4, 4);
         c.glMemoryBarrier(c.GL_SHADER_STORAGE_BARRIER_BIT);
     }
 
@@ -254,6 +261,9 @@ pub fn generatePoints(self: *QTG, count: usize) void {
         const x = (random.float(f32) - 0.5) * 2 * self.config.size[0] + self.config.pos[0];
 
         const y = (random.float(f32) - 0.5) * 2 * self.config.size[1] + self.config.pos[1];
+        //const x = (random.float(f32) - 0.5) * 2 * 0.5 + self.config.pos[0];
+
+        //const y = (random.float(f32) - 0.5) * 2 * 0.5 + self.config.pos[1];
 
         const vx = (random.float(f32) - 0.5) * 2 * self.config.vel_mod;
         const vy = (random.float(f32) - 0.5) * 2 * self.config.vel_mod;

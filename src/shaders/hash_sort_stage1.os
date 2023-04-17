@@ -17,7 +17,7 @@ layout(std430, binding = 2) restrict writeonly buffer copy {
 	Point points[];
 } c;
 
-layout(std430, binding = 3) restrict coherent buffer buckets {
+layout(std430, binding = 3) restrict buffer buckets {
 	uint buckets[];
 } b;
 
@@ -59,10 +59,15 @@ void main() {
     const uint uend = uint(ps.points.length() * end);
 
 	for (uint i = ustart; i < uend; i++) {
-		const uint hash = hash(ps.points[i].pos);
-		ps.points[i].hash = hash;
+		uint h;
+		if (abs(ps.points[i].pos.x) > u_size.x || abs(ps.points[i].pos.y) > u_size.y) {
+			h = 0;
+		} else {
+			h = hash(ps.points[i].pos);
+		}
+		ps.points[i].hash = h;
 		c.points[i] = ps.points[i];
-		atomicAdd(b.buckets[hash], 1);
+		atomicAdd(b.buckets[h], 1);
 	}
 
 }

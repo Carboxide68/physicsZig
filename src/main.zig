@@ -10,7 +10,6 @@ const Buffer = buffer.Buffer;
 const Shader = @import("shader.zig").Shader;
 const VertexArray = buffer.VertexArray;
 const Camera = @import("Camera.zig");
-const QuadTree = @import("quadtree.zig");
 const v = @import("vector.zig");
 const Vec2 = v.Vec2;
 const QTG = @import("quadtree_gpu.zig");
@@ -180,45 +179,11 @@ pub fn main() anyerror!void {
 
     render_cam.updateCameraMatrix();
 
-    const direction_data = [8]f32{
-        0, 0,
-        1, 0,
-        0, 0,
-        0, 1,
-    };
-    var dir_vao = VertexArray.init();
-    defer dir_vao.destroy();
-
-    var dir_buffer = Buffer.init(@sizeOf(f32) * direction_data.len, .static_draw);
-    defer dir_buffer.destroy();
-
-    try dir_buffer.subData(0, @sizeOf(f32) * direction_data.len, common.toData(&direction_data[0]));
-    dir_vao.bindVertexBuffer(dir_buffer, 0, 0, @sizeOf(f32) * 2);
-    dir_vao.setLayout(0, 2, 0, buffer.GLType.float);
-
-    const dir_shader = try Shader.initFile("src/dir_shader.os");
-    defer dir_shader.destroy();
-
     var show_demo_window: bool = false;
     var draw_quadtree: bool = false;
     var draw_points: bool = false;
     var tick_per_frame: i32 = 1;
 
-    var qt = try QuadTree.init(common.a, .{
-        .pos = .{ .x = 0, .y = 0 },
-        .size = .{ .x = 10, .y = 10 },
-    });
-    defer qt.destroy();
-
-    std.debug.print(
-        "Timings:\n\tGen: {d:.5}ms\n\tHash: {d:.5}ms\n\tSort: {d:.5}ms\n\tDo Tick: {d:.5}ms\n",
-        .{
-            @intToFloat(f32, QuadTree.Timings.gen_points) / std.time.ns_per_ms,
-            @intToFloat(f32, QuadTree.Timings.hash) / std.time.ns_per_ms,
-            @intToFloat(f32, QuadTree.Timings.sort_points) / std.time.ns_per_ms,
-            @intToFloat(f32, QuadTree.Timings.do_tick) / std.time.ns_per_ms,
-        },
-    );
     const POINT_COUNT = 50000;
     var qtg = try QTG.init(common.a, .{});
     defer qtg.destroy();

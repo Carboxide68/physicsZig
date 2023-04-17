@@ -14,14 +14,14 @@ layout(std430, binding = 0) restrict writeonly buffer points {
 } ps;
 
 layout(std430, binding = 1) restrict buffer Invocation_Data {
-	uvec2 data[];
+	uvec4 data[];
 } inv;
 
 layout(std430, binding = 2) restrict readonly buffer copy {
 	Point points[];
 } c;
 
-layout(std430, binding = 3) restrict coherent buffer buckets {
+layout(std430, binding = 3) restrict buffer buckets {
 	uint buckets[];
 } b;
 
@@ -32,7 +32,6 @@ void main() {
         gl_WorkGroupID.x;
 	const float WGS =  float(gl_NumWorkGroups.x * gl_NumWorkGroups.y * gl_NumWorkGroups.z);
 	const float INV_PER_WG = float(gl_WorkGroupSize.x * gl_WorkGroupSize.y * gl_WorkGroupSize.z);
-    const uint INV = gl_LocalInvocationIndex + uint(INV_PER_WG) * WorkGroupIndex;
 	const float WorkGroupStart = float(WorkGroupIndex)/WGS;
     const float WorkGroupEnd = float(WorkGroupIndex+1)/WGS;
 	const float start = mix(WorkGroupStart, WorkGroupEnd, 
@@ -41,12 +40,16 @@ void main() {
 		float(gl_LocalInvocationIndex+1)/INV_PER_WG);
     const uint ustart = uint(c.points.length() * start);
     const uint uend = uint(c.points.length() * end);
+    const uint INV = gl_LocalInvocationIndex + uint(INV_PER_WG) * WorkGroupIndex;
 
 	for (uint i = ustart; i < uend; i++) {
 		const Point point = c.points[i];
 		uint bucket = atomicAdd(b.buckets[point.hash], 1);
+		inv.data[i].x = bucket;
 		bucket += b.buckets[b.buckets.length() - 16 
 					+ uint(floor(float(point.hash)/pow(2, 16 - 4)))];
+		inv.data[i].y = uint(floor(float(point.hash)/pow(2, 16 - 4)));
+		inv.data[i].z = point.hash;
 		ps.points[bucket] = point;
 	}
 }

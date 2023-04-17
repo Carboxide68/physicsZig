@@ -25,7 +25,7 @@ layout(std430, binding = 2) restrict readonly buffer copy {
 	Point points[];
 } c;
 
-layout(std430, binding = 3) restrict buffer buckets {
+layout(std430, binding = 3) restrict readonly buffer buckets {
 	uint buckets[];
 } b;
 
@@ -110,10 +110,10 @@ uint hash(vec2 point) {
 }
 
 uint getBucket(uint h) {
-    uint basic = b.buckets[h];
-	basic += b.buckets[b.buckets.length() - 16 
+    uint bucket = b.buckets[h];
+	bucket += b.buckets[b.buckets.length() - 16 
 				+ uint(floor(float(h)/pow(2, 16 - 4)))];
-    return basic;
+    return bucket;
 }
 
 void main() {
@@ -123,18 +123,27 @@ void main() {
             vec4( u_size.x, -u_size.y, -u_size.x, -u_size.y),
             vec4(-u_size.x, -u_size.y, -u_size.x,  u_size.y)
         ));
+    //box = Box(vec4[4](
+    //        vec4(-0.6,  0.6,  0.6,  0.6),
+    //        vec4( 0.6,  0.6,  0.6, -0.6),
+    //        vec4( 0.6, -0.6, -0.6, -0.6),
+    //        vec4(-0.6, -0.6, -0.6,  0.6)
+    //    ));
     uint WorkGroupIndex =
         (gl_WorkGroupID.z) * gl_NumWorkGroups.x * gl_NumWorkGroups.y +
         (gl_WorkGroupID.y) * gl_NumWorkGroups.x +
         (gl_WorkGroupID.x);
-    const float WorkGroupStart = float(WorkGroupIndex)/float(gl_NumWorkGroups.x * gl_NumWorkGroups.y * gl_NumWorkGroups.z);
-    const float WorkGroupEnd = float(WorkGroupIndex+1)/float(gl_NumWorkGroups.x * gl_NumWorkGroups.y * gl_NumWorkGroups.z);
-    const float start = mix(WorkGroupStart, WorkGroupEnd, float(gl_LocalInvocationIndex)/float(gl_WorkGroupSize.x * gl_WorkGroupSize.y * gl_WorkGroupSize.z));
-    const float end = mix(WorkGroupStart, WorkGroupEnd, float(gl_LocalInvocationIndex+1)/float(gl_WorkGroupSize.x * gl_WorkGroupSize.y * gl_WorkGroupSize.z));
-    const uint ustart = uint(c.points.length() * start);
-    const uint uend = uint(c.points.length() * end);
 	const uint WGS =  gl_NumWorkGroups.x * gl_NumWorkGroups.y * gl_NumWorkGroups.z;
 	const uint INV_PER_WG = gl_WorkGroupSize.x * gl_WorkGroupSize.y * gl_WorkGroupSize.z;
+    const float WorkGroupStart = float(WorkGroupIndex)/float(WGS);
+    const float WorkGroupEnd = float(WorkGroupIndex+1)/float(WGS);
+    const float start = mix(WorkGroupStart, WorkGroupEnd, 
+        float(gl_LocalInvocationIndex)/float(INV_PER_WG));
+    const float end = mix(WorkGroupStart, WorkGroupEnd, 
+        float(gl_LocalInvocationIndex+1)/float(INV_PER_WG));
+
+    const uint ustart = uint(c.points.length() * start);
+    const uint uend = uint(c.points.length() * end);
     const uint INV = gl_LocalInvocationIndex + INV_PER_WG * WorkGroupIndex;
 
     for (uint i = ustart; i < uend; i++) {
@@ -151,24 +160,38 @@ void main() {
             vec2(pos.x + r, pos.y - r)
         );
 
-        uint last = 1000000;
-        for (uint k = 0; k < 4; k++) {
-            const vec2 p = POINTS[k];
-            if (abs(p.x) >= u_size.x || abs(p.y) >= u_size.y) continue;
+        uint hits = 0;
+        uint hit_list[4] = {0, 0, 0, 0};
+        //for (uint k = 0; k < 4; k++) {
+        //    const vec2 p = POINTS[k];
+        //    if (abs(p.x) >= u_size.x || abs(p.y) >= u_size.y) continue;
 
-            const uint h = hash(p);
-            if (h == last) continue;
-            const uint arr_end = getBucket(h);
-            const uint arr_start = (h == 0) ? 0 : getBucket(h - 1);
+        //    const uint h = hash(p);
+        //    bool hit = false;
+        //    for (uint j = 0; j < hits; j++) {
+        //        if (hit_list[j] == h) {
+        //            hit = true;
+        //            break;
+        //        }
+        //    }
+        //    if (hit) {
+        //        continue; 
+        //    } else {
+        //        hit_list[hits] = h;
+        //        hits += 1;
+        //    }
+        //    const uint arr_end = getBucket(h);
+        //    const uint arr_start = (h == 0) ? 0 : getBucket(h - 1);
+        //    inv.data[INV].d[k] = uvec2(arr_start, arr_end);
 
-            for (uint j = arr_start; j < arr_end; j++) {
-                const Point o = c.points[j];
-                const vec2 vel_o = ac.vel[o.id];
+        //    for (uint j = arr_start; j < arr_end; j++) {
+        //        const Point o = c.points[j];
+        //        const vec2 vel_o = ac.vel[o.id];
 
-                vel -= collide(pos, o.pos, vel, vel_o, r);
-            }
-            last = h;
-        }
+        //        vel -= collide(pos, o.pos, vel, vel_o, r);
+        //    }
+        //}
+        inv.data[INV].d[4] = uvec2(point.id, point.hash);
 
         vec2 line_vel = vec2(0, 0);
         for (uint k = 0; k < box.lines.length(); k++) {
@@ -177,6 +200,7 @@ void main() {
         }
         vel += line_vel;
         aux.vel[id] = vel;
+
         ps.points[i].pos = pos + vel * u_ts;
 
     }

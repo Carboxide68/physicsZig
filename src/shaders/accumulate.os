@@ -10,9 +10,10 @@ layout(std430, binding = 3) restrict buffer buckets {
 
 void main() {
 
+	const uint BUCKETS = uint(pow(2, 16 - 4));
 	const uint id = gl_LocalInvocationIndex;
-	const uint start = id * 65536/16;
-	const uint end = (id + 1) * 65536/16;
+	const uint start = id * BUCKETS;
+	const uint end = (id + 1) * BUCKETS;
 
 	uint tot = 0;
 	for (uint i = start; i < end; i++) {
